@@ -32,3 +32,23 @@ export async function findInvoiceByNumber(
     .limit(1);
   return row ?? rows[0] ?? null;
 }
+
+export async function findInvoiceByProviderMessage(opts: {
+  businessId: string;
+  provider: string;
+  providerMessageId: string;
+}) {
+  const id = requireBusinessId(opts.businessId);
+  const [row] = await db
+    .select({ id: invoices.id, status: invoices.status })
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.businessId, id),
+        eq(invoices.provider, opts.provider),
+        eq(invoices.providerMessageId, opts.providerMessageId),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
