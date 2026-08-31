@@ -4,8 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  { href: "/dashboard", label: "Dashboard" },
+  { href: "/dashboard", label: "Home" },
   { href: "/jobs", label: "Jobs" },
+  { href: "/invoices", label: "Invoices" },
   { href: "/customers", label: "Customers" },
 ];
 
@@ -23,7 +24,7 @@ export function AppNav() {
         </Link>
       </header>
       <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-stone-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden">
-        <ul className="grid grid-cols-3">
+        <ul className="grid grid-cols-4">
           {items.map((item) => {
             const active =
               pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -31,7 +32,7 @@ export function AppNav() {
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  className={`block py-3 text-center text-sm ${active ? "font-semibold text-amber-800" : "text-stone-600"}`}
+                  className={`block py-3 text-center text-xs ${active ? "font-semibold text-amber-800" : "text-stone-600"}`}
                 >
                   {item.label}
                 </Link>
