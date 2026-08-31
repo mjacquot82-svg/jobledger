@@ -240,7 +240,7 @@ export async function assignInvoiceToJob(opts: {
     .set({
       jobId: job.id,
       status: "matched",
-      matchReason: `Assigned by you to ${job.jobTag}`,
+      matchReason: `Assigned by you to ${job.jobTag ?? job.name}`,
     })
     .where(
       and(

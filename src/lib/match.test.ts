@@ -12,6 +12,12 @@ const jobs = [
   { id: "3", jobTag: "CHEN-003" },
 ];
 
+const withNumber = [
+  ...jobs,
+  { id: "4", jobTag: "104" },
+  { id: "5", jobTag: null },
+];
+
 describe("matchJobs", () => {
   it("matches a single job tag in PDF text", () => {
     const result = matchJobs("Home Depot invoice for SMITH-001\nTotal $250.00", jobs);
@@ -36,6 +42,40 @@ describe("matchJobs", () => {
     if (result.status === "matched") {
       expect(result.jobTag).toBe("SMITH-001");
     }
+  });
+
+  it("matches a numeric job number with a hash", () => {
+    const result = matchJobs("Invoice #104 from Home Depot", withNumber);
+    expect(result.status).toBe("matched");
+    if (result.status === "matched") {
+      expect(result.jobId).toBe("4");
+      expect(result.jobTag).toBe("104");
+    }
+  });
+
+  it("matches job 104 wording", () => {
+    const result = matchJobs("Please charge job 104", withNumber);
+    expect(result.status).toBe("matched");
+    if (result.status === "matched") {
+      expect(result.jobTag).toBe("104");
+    }
+  });
+
+  it("does not treat a dollar total as a job number", () => {
+    const result = matchJobs("Home Depot\nTotal $104.00", withNumber);
+    expect(result.status).toBe("unmatched");
+  });
+
+  it("does not match 104 inside 1040 or 104.00", () => {
+    expect(matchJobs("PO 1040 extra digits", withNumber).status).toBe(
+      "unmatched",
+    );
+    expect(matchJobs("Amount 104.00 CAD", withNumber).status).toBe("unmatched");
+  });
+
+  it("skips jobs with no tag instead of guessing from the name", () => {
+    const result = matchJobs("Smith Garage materials", withNumber);
+    expect(result.status).toBe("unmatched");
   });
 
   it("sends multiple tags to needs review instead of guessing", () => {

@@ -34,7 +34,8 @@ Change `BETTER_AUTH_SECRET` in `.env` to any long random string before sharing t
 ## What works now
 
 - Sign in, jobs, customers, dashboard
-- Upload supplier PDFs. Job tag in the file name, email subject, or PDF text auto-matches (exact one tag only; two tags go to Needs review; no silent guess)
+- Job name is required. Job number/tag is optional (`104`, `SMITH-001`, or blank). New-job form suggests the next unused number starting at 101
+- Upload supplier PDFs. A job tag or number in the file name, email subject, or PDF text auto-matches (exact one tag only; two tags go to Needs review; no silent guess). Numeric tags ignore dollar amounts like `$104.00`
 - Duplicate detection by file hash, supplier invoice number, and email message id
 - Manual job costs on the job screen
 - Bill customer from job costs (draft → issued → paid). Nothing is emailed
@@ -62,7 +63,7 @@ curl -X POST http://localhost:3000/api/inbound/email \
   -F "file=@./your-invoice.pdf"
 ```
 
-A job tag in the subject, file name, or PDF text matches. No tag, or two tags, goes to Needs review.
+A job tag or number in the subject, file name, or PDF text matches. No tag, or two tags, goes to Needs review. Jobs with no tag stay unmatched until you assign them.
 
 Connect Email (Gmail / Outlook / Hotmail / Microsoft 365, platform-owned OAuth) is not live yet.
 
