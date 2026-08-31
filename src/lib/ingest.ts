@@ -2,10 +2,21 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { costCategories, invoices, jobCosts, jobs, suppliers } from "@/db/schema";
 import { extractInvoiceFields, matchJobs } from "./match";
-import { findInvoiceByNumber } from "./invoice-duplicates";
+import {
+  findInvoiceByNumber,
+  findInvoiceByProviderMessage,
+} from "./invoice-duplicates";
 import { runOcr } from "./ocr";
 import { findInvoiceByHash } from "./queries";
 import { hashBuffer, storeInvoiceFile } from "./storage";
+
+export type IngestEmailMeta = {
+  provider: string;
+  providerMessageId?: string;
+  subject?: string;
+  from?: string;
+  text?: string;
+};
 
 async function findOrCreateSupplier(businessId: string, name: string | null) {
   if (!name) return null;
@@ -63,10 +74,27 @@ async function postInvoiceCost(opts: {
   });
 }
 
-export async function ingestUploadedInvoice(opts: {
+function haystack(opts: {
+  filename: string;
+  extractedText: string;
+  email?: IngestEmailMeta;
+}) {
+  return [
+    opts.email?.subject,
+    opts.email?.text,
+    opts.filename,
+    opts.extractedText,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export async function ingestInvoiceAttachment(opts: {
   businessId: string;
   filename: string;
   buffer: Buffer;
+  source: "upload" | "email";
+  email?: IngestEmailMeta;
 }) {
   const contentHash = hashBuffer(opts.buffer);
   const duplicate = await findInvoiceByHash(opts.businessId, contentHash);
@@ -74,8 +102,24 @@ export async function ingestUploadedInvoice(opts: {
     return { id: duplicate.id, duplicate: true as const };
   }
 
+  if (opts.email?.provider && opts.email.providerMessageId) {
+    const messageDup = await findInvoiceByProviderMessage({
+      businessId: opts.businessId,
+      provider: opts.email.provider,
+      providerMessageId: opts.email.providerMessageId,
+    });
+    if (messageDup) {
+      return { id: messageDup.id, duplicate: true as const };
+    }
+  }
+
   const extractedText = await runOcr("local_pdf", opts.buffer);
-  const fields = extractInvoiceFields(`${opts.filename}\n${extractedText}`);
+  const searchText = haystack({
+    filename: opts.filename,
+    extractedText,
+    email: opts.email,
+  });
+  const fields = extractInvoiceFields(searchText);
 
   if (fields.invoiceNumber) {
     const numberDup = await findInvoiceByNumber(
@@ -100,7 +144,7 @@ export async function ingestUploadedInvoice(opts: {
     .select({ id: jobs.id, jobTag: jobs.jobTag })
     .from(jobs)
     .where(eq(jobs.businessId, opts.businessId));
-  const match = matchJobs(`${opts.filename}\n${extractedText}`, jobRows);
+  const match = matchJobs(searchText, jobRows);
   const supplierId = await findOrCreateSupplier(
     opts.businessId,
     fields.supplierNameGuess,
@@ -113,7 +157,7 @@ export async function ingestUploadedInvoice(opts: {
   if (!extractedText && match.status === "unmatched") {
     status = "failed";
     matchReason =
-      "Could not read PDF text and no job tag was in the file name. Paid OCR is not enabled.";
+      "Could not read PDF text and no job tag was in the file name or email. Paid OCR is not enabled.";
   } else if (match.status === "matched") {
     status = "matched";
     jobId = match.jobId;
@@ -129,7 +173,11 @@ export async function ingestUploadedInvoice(opts: {
     supplierId,
     jobId,
     status,
-    source: "upload",
+    source: opts.source,
+    provider: opts.email?.provider ?? (opts.source === "upload" ? "upload" : null),
+    providerMessageId: opts.email?.providerMessageId ?? null,
+    emailSubject: opts.email?.subject ?? null,
+    emailFrom: opts.email?.from ?? null,
     invoiceNumber: fields.invoiceNumber,
     totalCents: fields.totalCents,
     originalFilename: opts.filename,
@@ -150,6 +198,17 @@ export async function ingestUploadedInvoice(opts: {
   }
 
   return { id: invoiceId, duplicate: false as const };
+}
+
+export async function ingestUploadedInvoice(opts: {
+  businessId: string;
+  filename: string;
+  buffer: Buffer;
+}) {
+  return ingestInvoiceAttachment({
+    ...opts,
+    source: "upload",
+  });
 }
 
 export async function assignInvoiceToJob(opts: {
