@@ -1,0 +1,7 @@
+Home Depot
+Invoice INV-1001
+Job SMITH-001
+Total $250.00
+
+Print this to PDF or upload any PDF whose file name contains SMITH-001.
+JobLedger matches the job tag first and never guesses when two tags appear.

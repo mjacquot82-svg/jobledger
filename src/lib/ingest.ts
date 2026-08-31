@@ -1,8 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { costCategories, invoices, jobCosts, jobs, suppliers } from "@/db/schema";
-import { extractPdfText } from "./extract";
 import { extractInvoiceFields, matchJobs } from "./match";
+import { findInvoiceByNumber } from "./invoice-duplicates";
+import { runOcr } from "./ocr";
 import { findInvoiceByHash } from "./queries";
 import { hashBuffer, storeInvoiceFile } from "./storage";
 
@@ -73,6 +74,20 @@ export async function ingestUploadedInvoice(opts: {
     return { id: duplicate.id, duplicate: true as const };
   }
 
+  const extractedText = await runOcr("local_pdf", opts.buffer);
+  const fields = extractInvoiceFields(`${opts.filename}\n${extractedText}`);
+
+  if (fields.invoiceNumber) {
+    const numberDup = await findInvoiceByNumber(
+      opts.businessId,
+      fields.invoiceNumber,
+      fields.supplierNameGuess,
+    );
+    if (numberDup) {
+      return { id: numberDup.id, duplicate: true as const };
+    }
+  }
+
   const invoiceId = crypto.randomUUID();
   const storedPath = await storeInvoiceFile(
     opts.businessId,
@@ -81,8 +96,6 @@ export async function ingestUploadedInvoice(opts: {
     opts.filename,
   );
 
-  const extractedText = await extractPdfText(opts.buffer);
-  const fields = extractInvoiceFields(`${opts.filename}\n${extractedText}`);
   const jobRows = await db
     .select({ id: jobs.id, jobTag: jobs.jobTag })
     .from(jobs)

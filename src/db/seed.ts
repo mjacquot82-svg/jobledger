@@ -8,8 +8,10 @@ import {
   costCategories,
   customers,
   jobs,
+  suppliers,
   user,
 } from "./schema";
+import { inboundAddressFor } from "@/lib/email-ingest";
 
 const DEMO_EMAIL = "demo@jobledger.local";
 const DEMO_PASSWORD = "DemoPass123!";
@@ -44,6 +46,11 @@ async function main() {
     })
     .returning();
 
+  await db
+    .update(businesses)
+    .set({ inboundAddress: inboundAddressFor(business.id) })
+    .where(eq(businesses.id, business.id));
+
   const userId = crypto.randomUUID();
   const now = new Date();
 
@@ -74,6 +81,11 @@ async function main() {
       sortOrder: category.sortOrder,
     })),
   );
+
+  await db.insert(suppliers).values({
+    businessId: business.id,
+    name: "Home Depot",
+  });
 
   const [smith] = await db
     .insert(customers)
@@ -116,7 +128,7 @@ async function main() {
       jobTag: "SMITH-001",
       status: "active",
       addressLine1: "123 Example Road",
-      notes: "Detached garage rebuild. Seed job for Milestone 1.",
+      notes: "Detached garage rebuild. Put SMITH-001 on supplier invoices to auto-match.",
     },
     {
       businessId: business.id,
