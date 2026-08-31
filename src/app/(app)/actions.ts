@@ -12,7 +12,17 @@ import { requireSession } from "@/lib/session";
 
 const jobSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
-  jobTag: z.string().trim().min(1, "Job tag is required"),
+  jobTag: z.preprocess(
+    (value) => {
+      if (typeof value !== "string") return undefined;
+      const trimmed = value.trim();
+      return trimmed.length ? trimmed : undefined;
+    },
+    z
+      .string()
+      .min(3, "Use at least 3 characters so it can auto-match")
+      .optional(),
+  ),
   customerId: z.string().uuid(),
   status: z.enum(["active", "completed", "archived"]).default("active"),
   addressLine1: z.string().trim().optional(),
@@ -53,7 +63,12 @@ export async function createJobAction(formData: FormData) {
   const [job] = await db
     .insert(jobs)
     .values({
-      ...parsed,
+      name: parsed.name,
+      jobTag: parsed.jobTag ?? null,
+      customerId: parsed.customerId,
+      status: parsed.status,
+      addressLine1: parsed.addressLine1,
+      notes: parsed.notes,
       businessId: session.user.businessId,
     })
     .returning();
@@ -76,7 +91,14 @@ export async function updateJobAction(jobId: string, formData: FormData) {
 
   await db
     .update(jobs)
-    .set(parsed)
+    .set({
+      name: parsed.name,
+      jobTag: parsed.jobTag ?? null,
+      customerId: parsed.customerId,
+      status: parsed.status,
+      addressLine1: parsed.addressLine1,
+      notes: parsed.notes,
+    })
     .where(
       and(eq(jobs.id, jobId), eq(jobs.businessId, session.user.businessId)),
     );

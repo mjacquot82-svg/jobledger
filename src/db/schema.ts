@@ -187,7 +187,7 @@ export const jobs = pgTable(
       .notNull()
       .references(() => customers.id, { onDelete: "restrict" }),
     name: text("name").notNull(),
-    jobTag: text("job_tag").notNull(),
+    jobTag: text("job_tag"),
     status: jobStatusEnum("status").notNull().default("active"),
     addressLine1: text("address_line1"),
     notes: text("notes"),

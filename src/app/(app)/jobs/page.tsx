@@ -26,7 +26,8 @@ export default async function JobsPage() {
                 <p className="text-xs uppercase text-stone-500">{job.status}</p>
               </div>
               <p className="text-sm text-stone-500">
-                {job.jobTag} · {job.customerName}
+                {job.jobTag ? `${job.jobTag} · ` : ""}
+                {job.customerName}
               </p>
             </Link>
           </li>

@@ -35,7 +35,9 @@ export default async function JobDetailPage({
     <main className="space-y-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm text-stone-500">{job.jobTag}</p>
+          {job.jobTag ? (
+            <p className="text-sm text-stone-500">{job.jobTag}</p>
+          ) : null}
           <h1 className="text-2xl font-semibold">{job.name}</h1>
           <p className="mt-1 text-stone-600">
             {job.customerName}
