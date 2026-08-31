@@ -32,6 +32,13 @@ export const invoiceStatusEnum = pgEnum("invoice_status", [
 
 export const invoiceSourceEnum = pgEnum("invoice_source", ["upload", "email"]);
 
+export const mailboxProviderEnum = pgEnum("mailbox_provider", [
+  "google",
+  "microsoft",
+  "forwarding",
+  "other",
+]);
+
 export const billStatusEnum = pgEnum("bill_status", ["draft", "issued", "paid"]);
 
 export const businesses = pgTable("businesses", {
@@ -116,6 +123,35 @@ export const verification = pgTable("verification", {
   updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow(),
 });
 
+export const mailboxConnections = pgTable(
+  "mailbox_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    provider: mailboxProviderEnum("provider").notNull(),
+    status: text("status").notNull().default("disconnected"),
+    externalAccount: text("external_account"),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }),
+    watchExpiresAt: timestamp("watch_expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("mailbox_connections_business_provider_idx").on(
+      table.businessId,
+      table.provider,
+    ),
+  ],
+);
+
 export const customers = pgTable(
   "customers",
   {
@@ -194,6 +230,10 @@ export const invoices = pgTable(
     jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
     status: invoiceStatusEnum("status").notNull().default("processing"),
     source: invoiceSourceEnum("source").notNull().default("upload"),
+    provider: text("provider"),
+    providerMessageId: text("provider_message_id"),
+    emailSubject: text("email_subject"),
+    emailFrom: text("email_from"),
     invoiceNumber: text("invoice_number"),
     totalCents: integer("total_cents"),
     currency: text("currency").notNull().default("CAD"),
@@ -211,6 +251,11 @@ export const invoices = pgTable(
     uniqueIndex("invoices_business_hash_idx").on(
       table.businessId,
       table.contentHash,
+    ),
+    uniqueIndex("invoices_business_provider_msgid_idx").on(
+      table.businessId,
+      table.provider,
+      table.providerMessageId,
     ),
   ],
 );
