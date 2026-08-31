@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
   businesses,
@@ -70,11 +70,11 @@ export async function getBill(businessId: string, billId: string) {
 
 export async function nextBillNumber(businessId: string) {
   const id = requireBusinessId(businessId);
-  const [row] = await db
-    .select({ count: sql<number>`count(*)` })
+  const rows = await db
+    .select({ number: customerInvoices.number })
     .from(customerInvoices)
     .where(eq(customerInvoices.businessId, id));
-  const n = Number(row?.count ?? 0) + 1;
+  const n = rows.length + 1;
   return `CINV-${String(n).padStart(4, "0")}`;
 }
 
@@ -116,19 +116,15 @@ export async function createBillFromJob(opts: {
     })
     .returning();
 
-  if (lines.length) {
-    await db.insert(customerInvoiceLines).values(
-      lines.map((line) => ({
-        businessId,
-        customerInvoiceId: bill.id,
-        description: `${line.name} on ${job.jobTag}`,
-        amountCents: line.amountCents ?? line.totalCents,
-      })),
-    );
-  }
+  const lineRows = lines.map((line) => ({
+    businessId,
+    customerInvoiceId: bill.id,
+    description: `${line.name} on ${job.jobTag}`,
+    amountCents: line.totalCents,
+  }));
 
   if (markup > 0) {
-    await db.insert(customerInvoiceLines).values({
+    lineRows.push({
       businessId,
       customerInvoiceId: bill.id,
       description: `Markup ${markupBps / 100}%`,
@@ -136,14 +132,36 @@ export async function createBillFromJob(opts: {
     });
   }
 
-  if (!lines.length) {
-    await db.insert(customerInvoiceLines).values({
+  if (!lineRows.length) {
+    lineRows.push({
       businessId,
       customerInvoiceId: bill.id,
-      description: `${job.name} (${job.jobTag})`,
+      description: `${job.name} (${job.jobTag}) — no costs yet`,
       amountCents: 0,
     });
   }
 
+  await db.insert(customerInvoiceLines).values(lineRows);
   return bill.id;
+}
+
+export async function setBillStatus(opts: {
+  businessId: string;
+  billId: string;
+  status: "draft" | "issued" | "paid";
+}) {
+  const now = new Date();
+  await db
+    .update(customerInvoices)
+    .set({
+      status: opts.status,
+      issuedAt: opts.status === "issued" || opts.status === "paid" ? now : null,
+      paidAt: opts.status === "paid" ? now : null,
+    })
+    .where(
+      and(
+        eq(customerInvoices.id, opts.billId),
+        eq(customerInvoices.businessId, opts.businessId),
+      ),
+    );
 }
