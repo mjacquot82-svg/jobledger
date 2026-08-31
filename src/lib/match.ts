@@ -1,4 +1,4 @@
-export type JobTag = { id: string; jobTag: string };
+export type JobTag = { id: string; jobTag: string | null };
 
 export type MatchResult =
   | { status: "matched"; jobId: string; jobTag: string; reason: string }
@@ -7,12 +7,18 @@ export type MatchResult =
 
 function tagPattern(tag: string) {
   const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (/^\d+$/.test(tag)) {
+    return new RegExp(
+      `(^|[^A-Za-z0-9$])(?:#|job\\s*#?)?${escaped}(?![0-9.])`,
+      "i",
+    );
+  }
   return new RegExp(`(^|[^A-Za-z0-9])${escaped}([^A-Za-z0-9]|$)`, "i");
 }
 
 export function matchJobs(haystack: string, jobs: JobTag[]): MatchResult {
   const hits = jobs.filter((job) => {
-    const tag = job.jobTag.trim();
+    const tag = job.jobTag?.trim() ?? "";
     if (tag.length < 3) return false;
     return tagPattern(tag).test(haystack);
   });
@@ -23,13 +29,13 @@ export function matchJobs(haystack: string, jobs: JobTag[]): MatchResult {
     return {
       status: "matched",
       jobId: unique[0].id,
-      jobTag: unique[0].jobTag,
+      jobTag: unique[0].jobTag as string,
       reason: `Found job tag ${unique[0].jobTag}`,
     };
   }
 
   if (unique.length > 1) {
-    const tags = unique.map((job) => job.jobTag);
+    const tags = unique.map((job) => job.jobTag).filter(Boolean) as string[];
     return {
       status: "needs_review",
       jobIds: unique.map((job) => job.id),
@@ -40,7 +46,7 @@ export function matchJobs(haystack: string, jobs: JobTag[]): MatchResult {
 
   return {
     status: "unmatched",
-    reason: "No job tag found in the file name or PDF text",
+    reason: "No job tag found in the file name, email, or PDF text",
   };
 }
 

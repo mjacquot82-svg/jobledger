@@ -5,7 +5,7 @@ type CustomerOption = {
 
 type JobValues = {
   name?: string;
-  jobTag?: string;
+  jobTag?: string | null;
   customerId?: string;
   status?: string;
   addressLine1?: string;
@@ -16,11 +16,15 @@ export function JobForm({
   customers,
   action,
   defaultValues,
+  suggestedNumber,
 }: {
   customers: CustomerOption[];
   action: (formData: FormData) => Promise<void>;
   defaultValues?: JobValues;
+  suggestedNumber?: string;
 }) {
+  const placeholder = suggestedNumber ?? "104";
+
   return (
     <form action={action} className="space-y-4">
       <label className="block">
@@ -33,14 +37,18 @@ export function JobForm({
         />
       </label>
       <label className="block">
-        <span className="text-sm font-medium">Job tag</span>
+        <span className="text-sm font-medium">Job number or tag (optional)</span>
         <input
           className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-3"
           name="jobTag"
-          defaultValue={defaultValues?.jobTag}
-          placeholder="SMITH-001"
-          required
+          defaultValue={defaultValues?.jobTag ?? ""}
+          placeholder={placeholder}
         />
+        <span className="mt-1 block text-sm text-stone-500">
+          A number like {placeholder} is easiest to put on invoices or in an email
+          subject (#104). SMITH-001 still works. Leave blank if you only want the
+          name. Use at least 3 characters so it can auto-match.
+        </span>
       </label>
       <label className="block">
         <span className="text-sm font-medium">Customer</span>
