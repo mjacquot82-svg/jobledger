@@ -1,11 +1,13 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  businesses,
   costCategories,
   customers,
+  invoices,
   jobCosts,
   jobs,
-  businesses,
+  suppliers,
 } from "@/db/schema";
 
 export function requireBusinessId(businessId: string | null | undefined) {
@@ -123,4 +125,96 @@ export async function countActiveJobs(businessId: string) {
     .from(jobs)
     .where(and(eq(jobs.businessId, id), eq(jobs.status, "active")));
   return Number(row?.count ?? 0);
+}
+
+export async function countNeedsReview(businessId: string) {
+  const id = requireBusinessId(businessId);
+  const [row] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.businessId, id),
+        inArray(invoices.status, [
+          "needs_review",
+          "unmatched",
+          "duplicate",
+          "failed",
+        ]),
+      ),
+    );
+  return Number(row?.count ?? 0);
+}
+
+export async function listInvoices(businessId: string) {
+  const id = requireBusinessId(businessId);
+  return db
+    .select({
+      id: invoices.id,
+      status: invoices.status,
+      originalFilename: invoices.originalFilename,
+      invoiceNumber: invoices.invoiceNumber,
+      totalCents: invoices.totalCents,
+      matchReason: invoices.matchReason,
+      jobName: jobs.name,
+      jobTag: jobs.jobTag,
+      supplierName: suppliers.name,
+      createdAt: invoices.createdAt,
+    })
+    .from(invoices)
+    .leftJoin(jobs, eq(jobs.id, invoices.jobId))
+    .leftJoin(suppliers, eq(suppliers.id, invoices.supplierId))
+    .where(eq(invoices.businessId, id))
+    .orderBy(desc(invoices.createdAt));
+}
+
+export async function getInvoice(businessId: string, invoiceId: string) {
+  const id = requireBusinessId(businessId);
+  const [row] = await db
+    .select({
+      id: invoices.id,
+      status: invoices.status,
+      originalFilename: invoices.originalFilename,
+      invoiceNumber: invoices.invoiceNumber,
+      totalCents: invoices.totalCents,
+      matchReason: invoices.matchReason,
+      extractedText: invoices.extractedText,
+      supplierNameGuess: invoices.supplierNameGuess,
+      jobId: invoices.jobId,
+      jobName: jobs.name,
+      jobTag: jobs.jobTag,
+      supplierName: suppliers.name,
+      createdAt: invoices.createdAt,
+    })
+    .from(invoices)
+    .leftJoin(jobs, eq(jobs.id, invoices.jobId))
+    .leftJoin(suppliers, eq(suppliers.id, invoices.supplierId))
+    .where(and(eq(invoices.businessId, id), eq(invoices.id, invoiceId)))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function listJobInvoices(businessId: string, jobId: string) {
+  const id = requireBusinessId(businessId);
+  return db
+    .select({
+      id: invoices.id,
+      status: invoices.status,
+      originalFilename: invoices.originalFilename,
+      invoiceNumber: invoices.invoiceNumber,
+      totalCents: invoices.totalCents,
+    })
+    .from(invoices)
+    .where(and(eq(invoices.businessId, id), eq(invoices.jobId, jobId)))
+    .orderBy(desc(invoices.createdAt));
+}
+
+export async function findInvoiceByHash(businessId: string, contentHash: string) {
+  const id = requireBusinessId(businessId);
+  const [row] = await db
+    .select({ id: invoices.id, status: invoices.status })
+    .from(invoices)
+    .where(and(eq(invoices.businessId, id), eq(invoices.contentHash, contentHash)))
+    .limit(1);
+  return row ?? null;
 }
