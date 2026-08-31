@@ -10,6 +10,11 @@ const items = [
   { href: "/customers", label: "Customers" },
 ];
 
+const extra = [
+  { href: "/bills", label: "Bills" },
+  { href: "/reports", label: "Reports" },
+];
+
 export function AppNav() {
   const pathname = usePathname();
 
@@ -43,7 +48,7 @@ export function AppNav() {
       </nav>
       <nav className="hidden border-b border-stone-200 px-4 py-2 md:block">
         <ul className="flex gap-4">
-          {items.map((item) => {
+          {[...items, ...extra].map((item) => {
             const active =
               pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (

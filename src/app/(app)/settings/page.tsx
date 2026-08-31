@@ -1,10 +1,16 @@
+import { emailIngestStatus, inboundAddressFor } from "@/lib/email-ingest";
 import { getBusiness } from "@/lib/queries";
 import { requireSession } from "@/lib/session";
 import { signOutAction } from "../actions";
+import { updateSettingsAction } from "./actions";
 
 export default async function SettingsPage() {
   const session = await requireSession();
   const business = await getBusiness(session.user.businessId);
+  const inbound =
+    business?.inboundAddress ?? inboundAddressFor(session.user.businessId);
+  const email = emailIngestStatus();
+  const markupPercent = ((business?.markupBps ?? 0) / 100).toFixed(2);
 
   return (
     <main className="space-y-6">
@@ -26,11 +32,39 @@ export default async function SettingsPage() {
           </div>
         </dl>
       </section>
+      <section className="rounded-xl border border-stone-200 bg-white p-4">
+        <h2 className="font-medium">Customer billing markup</h2>
+        <p className="mt-2 text-sm text-stone-600">
+          Applied when you bill a customer from job costs. 0 means bill costs as-is.
+        </p>
+        <form action={updateSettingsAction} className="mt-3 flex gap-3">
+          <label className="flex-1 text-sm">
+            Markup %
+            <input
+              className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2"
+              defaultValue={markupPercent}
+              inputMode="decimal"
+              name="markupPercent"
+            />
+          </label>
+          <button
+            className="mt-6 rounded-lg bg-amber-800 px-4 py-2 text-sm font-medium text-white"
+            type="submit"
+          >
+            Save
+          </button>
+        </form>
+      </section>
+      <section className="rounded-xl border border-stone-200 bg-white p-4 text-sm">
+        <h2 className="font-medium">Inbound email</h2>
+        <p className="mt-2 break-all font-mono text-stone-800">{inbound}</p>
+        <p className="mt-2 text-stone-600">{email.reason}</p>
+      </section>
       <section className="rounded-xl border border-stone-200 bg-white p-4 text-sm text-stone-600">
-        <h2 className="font-medium text-stone-900">Milestone 1</h2>
+        <h2 className="font-medium text-stone-900">OCR</h2>
         <p className="mt-2">
-          Email ingest, invoice matching, and OCR are not in this build. Needs
-          review stays at 0 until that work is authorized.
+          Provider: {business?.ocrProvider ?? "local_pdf"}. Local PDF text only.
+          Paid OCR is wired as an adapter and stays off until you authorize it.
         </p>
       </section>
       <form action={signOutAction}>
