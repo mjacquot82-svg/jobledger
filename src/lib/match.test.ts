@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import {
+  extractEmailAddresses,
+  inboundAddressFor,
+  isInvoiceAttachment,
+} from "./email-ingest";
 import { extractInvoiceFields, matchJobs } from "./match";
 
 const jobs = [
@@ -20,6 +25,17 @@ describe("matchJobs", () => {
   it("matches a job tag in the filename", () => {
     const result = matchJobs("SMITH-001-home-depot.pdf", jobs);
     expect(result.status).toBe("matched");
+  });
+
+  it("matches a job tag in an email subject", () => {
+    const result = matchJobs(
+      "Invoice for SMITH-001\nPlease see attached\nscan.pdf",
+      jobs,
+    );
+    expect(result.status).toBe("matched");
+    if (result.status === "matched") {
+      expect(result.jobTag).toBe("SMITH-001");
+    }
   });
 
   it("sends multiple tags to needs review instead of guessing", () => {
@@ -49,5 +65,31 @@ describe("extractInvoiceFields", () => {
     expect(fields.invoiceNumber).toBe("INV-1001");
     expect(fields.totalCents).toBe(125040);
     expect(fields.supplierNameGuess).toBe("Home Depot");
+  });
+});
+
+describe("email ingest helpers", () => {
+  it("builds a unique inbound address from the business id", () => {
+    const address = inboundAddressFor("11111111-2222-3333-4444-555555555555");
+    expect(address).toBe("invoices-111111112222@inbound.jobledger.local");
+  });
+
+  it("pulls the recipient out of a To header", () => {
+    expect(
+      extractEmailAddresses(
+        `Jacquot Demo <invoices-abc@inbound.jobledger.local>, other@example.com`,
+      ),
+    ).toEqual([
+      "invoices-abc@inbound.jobledger.local",
+      "other@example.com",
+    ]);
+  });
+
+  it("treats PDFs and photos as invoice-like attachments", () => {
+    expect(
+      isInvoiceAttachment({ filename: "bill.pdf", contentType: "application/pdf" }),
+    ).toBe(true);
+    expect(isInvoiceAttachment({ filename: "photo.JPG" })).toBe(true);
+    expect(isInvoiceAttachment({ filename: "notes.txt" })).toBe(false);
   });
 });

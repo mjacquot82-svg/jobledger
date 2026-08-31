@@ -56,7 +56,21 @@ export default async function SettingsPage() {
         </form>
       </section>
       <section className="rounded-xl border border-stone-200 bg-white p-4 text-sm">
-        <h2 className="font-medium">Inbound email</h2>
+        <h2 className="font-medium">Connect Email</h2>
+        <p className="mt-2 text-stone-600">
+          Recommended. One tap to connect Gmail, Outlook, Hotmail, or Microsoft
+          365. JobLedger owns the connection. Coming soon.
+        </p>
+        <button
+          className="mt-3 w-full rounded-lg border border-stone-300 px-4 py-3 font-medium text-stone-400"
+          disabled
+          type="button"
+        >
+          Connect Email
+        </button>
+      </section>
+      <section className="rounded-xl border border-stone-200 bg-white p-4 text-sm">
+        <h2 className="font-medium">Forward invoices</h2>
         <p className="mt-2 break-all font-mono text-stone-800">{inbound}</p>
         <p className="mt-2 text-stone-600">{email.reason}</p>
       </section>
