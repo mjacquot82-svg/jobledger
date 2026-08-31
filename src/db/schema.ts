@@ -32,11 +32,16 @@ export const invoiceStatusEnum = pgEnum("invoice_status", [
 
 export const invoiceSourceEnum = pgEnum("invoice_source", ["upload", "email"]);
 
+export const billStatusEnum = pgEnum("bill_status", ["draft", "issued", "paid"]);
+
 export const businesses = pgTable("businesses", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
   currency: text("currency").notNull().default("CAD"),
   timezone: text("timezone").notNull().default("America/Toronto"),
+  inboundAddress: text("inbound_address"),
+  ocrProvider: text("ocr_provider").notNull().default("local_pdf"),
+  markupBps: integer("markup_bps").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -244,7 +249,50 @@ export const jobCosts = pgTable("job_costs", {
   }),
   amountCents: integer("amount_cents").notNull().default(0),
   sourceType: costSourceEnum("source_type").notNull().default("manual"),
+  notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
+});
+
+export const customerInvoices = pgTable(
+  "customer_invoices",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
+    number: text("number").notNull(),
+    status: billStatusEnum("status").notNull().default("draft"),
+    subtotalCents: integer("subtotal_cents").notNull().default(0),
+    markupCents: integer("markup_cents").notNull().default(0),
+    totalCents: integer("total_cents").notNull().default(0),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("customer_invoices_business_number_idx").on(
+      table.businessId,
+      table.number,
+    ),
+  ],
+);
+
+export const customerInvoiceLines = pgTable("customer_invoice_lines", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  businessId: uuid("business_id")
+    .notNull()
+    .references(() => businesses.id, { onDelete: "cascade" }),
+  customerInvoiceId: uuid("customer_invoice_id")
+    .notNull()
+    .references(() => customerInvoices.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  amountCents: integer("amount_cents").notNull(),
 });
