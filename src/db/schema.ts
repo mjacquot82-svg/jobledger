@@ -21,6 +21,17 @@ export const costSourceEnum = pgEnum("cost_source", [
   "punchclock",
 ]);
 
+export const invoiceStatusEnum = pgEnum("invoice_status", [
+  "processing",
+  "matched",
+  "needs_review",
+  "unmatched",
+  "duplicate",
+  "failed",
+]);
+
+export const invoiceSourceEnum = pgEnum("invoice_source", ["upload", "email"]);
+
 export const businesses = pgTable("businesses", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
@@ -148,6 +159,57 @@ export const jobs = pgTable(
   ],
 );
 
+export const suppliers = pgTable(
+  "suppliers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("suppliers_business_name_idx").on(table.businessId, table.name),
+  ],
+);
+
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "cascade" }),
+    supplierId: uuid("supplier_id").references(() => suppliers.id, {
+      onDelete: "set null",
+    }),
+    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
+    status: invoiceStatusEnum("status").notNull().default("processing"),
+    source: invoiceSourceEnum("source").notNull().default("upload"),
+    invoiceNumber: text("invoice_number"),
+    totalCents: integer("total_cents"),
+    currency: text("currency").notNull().default("CAD"),
+    originalFilename: text("original_filename").notNull(),
+    storedPath: text("stored_path").notNull(),
+    contentHash: text("content_hash").notNull(),
+    extractedText: text("extracted_text"),
+    matchReason: text("match_reason"),
+    supplierNameGuess: text("supplier_name_guess"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("invoices_business_hash_idx").on(
+      table.businessId,
+      table.contentHash,
+    ),
+  ],
+);
+
 export const costCategories = pgTable(
   "cost_categories",
   {
@@ -177,6 +239,9 @@ export const jobCosts = pgTable("job_costs", {
   categoryId: uuid("category_id")
     .notNull()
     .references(() => costCategories.id, { onDelete: "restrict" }),
+  invoiceId: uuid("invoice_id").references(() => invoices.id, {
+    onDelete: "set null",
+  }),
   amountCents: integer("amount_cents").notNull().default(0),
   sourceType: costSourceEnum("source_type").notNull().default("manual"),
   createdAt: timestamp("created_at", { withTimezone: true })
