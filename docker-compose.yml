@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: jobledger
+      POSTGRES_PASSWORD: jobledger
+      POSTGRES_DB: jobledger
+    ports:
+      - "5432:5432"
+    volumes:
+      - jobledger_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobledger"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  jobledger_pg:
