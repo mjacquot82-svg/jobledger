@@ -9,7 +9,12 @@ const baseURL = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "pg",
-    schema,
+    schema: {
+      user: schema.user,
+      session: schema.session,
+      account: schema.account,
+      verification: schema.verification,
+    },
   }),
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,

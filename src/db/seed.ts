@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { and, eq } from "drizzle-orm";
-import { hashPassword } from "better-auth/crypto";
+import { auth } from "@/lib/auth";
 import { db } from "./";
 import {
   account,
@@ -8,6 +8,7 @@ import {
   costCategories,
   customers,
   jobs,
+  session,
   suppliers,
   user,
 } from "./schema";
@@ -23,36 +24,6 @@ const DEFAULT_CATEGORIES = [
   { name: "Equipment", sortOrder: 4 },
   { name: "Other", sortOrder: 5 },
 ];
-
-async function ensureDemoCredential(userId: string) {
-  const password = await hashPassword(DEMO_PASSWORD);
-  const [existingAccount] = await db
-    .select()
-    .from(account)
-    .where(
-      and(eq(account.userId, userId), eq(account.providerId, "credential")),
-    )
-    .limit(1);
-
-  if (existingAccount) {
-    await db
-      .update(account)
-      .set({ password, updatedAt: new Date() })
-      .where(eq(account.id, existingAccount.id));
-    return;
-  }
-
-  const now = new Date();
-  await db.insert(account).values({
-    id: crypto.randomUUID(),
-    accountId: userId,
-    providerId: "credential",
-    userId,
-    password,
-    createdAt: now,
-    updatedAt: now,
-  });
-}
 
 async function ensureDemoCatalog(businessId: string) {
   const existingCategories = await db
@@ -154,52 +125,58 @@ async function ensureDemoCatalog(businessId: string) {
   ]);
 }
 
-async function main() {
-  const existing = await db
+async function recreateDemoUser() {
+  const [existing] = await db
     .select()
     .from(user)
     .where(eq(user.email, DEMO_EMAIL))
     .limit(1);
 
-  if (existing[0]?.businessId) {
-    await ensureDemoCredential(existing[0].id);
-    await ensureDemoCatalog(existing[0].businessId);
-    console.log("Demo user repaired; password refreshed and catalog ensured.");
-    console.log(`Sign in: ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
-    process.exit(0);
+  if (existing) {
+    await db.delete(session).where(eq(session.userId, existing.id));
+    await db.delete(account).where(eq(account.userId, existing.id));
+    await db.delete(user).where(eq(user.id, existing.id));
   }
 
-  const [business] = await db
-    .insert(businesses)
-    .values({
-      name: "Jacquot Demo Contracting",
-      currency: "CAD",
-      timezone: "America/Toronto",
-    })
-    .returning();
-
-  await db
-    .update(businesses)
-    .set({ inboundAddress: inboundAddressFor(business.id) })
-    .where(eq(businesses.id, business.id));
-
-  const userId = crypto.randomUUID();
-  const now = new Date();
-
-  await db.insert(user).values({
-    id: userId,
-    name: "Demo Owner",
-    email: DEMO_EMAIL,
-    emailVerified: true,
-    businessId: business.id,
-    createdAt: now,
-    updatedAt: now,
+  const signedUp = await auth.api.signUpEmail({
+    body: {
+      email: DEMO_EMAIL,
+      password: DEMO_PASSWORD,
+      name: "Demo Owner",
+    },
   });
 
-  await ensureDemoCredential(userId);
-  await ensureDemoCatalog(business.id);
+  const userId = signedUp.user.id;
+  let businessId = existing?.businessId ?? null;
 
-  console.log("Seeded Jacquot Demo Contracting.");
+  if (!businessId) {
+    const [business] = await db
+      .insert(businesses)
+      .values({
+        name: "Jacquot Demo Contracting",
+        currency: "CAD",
+        timezone: "America/Toronto",
+      })
+      .returning();
+    businessId = business.id;
+    await db
+      .update(businesses)
+      .set({ inboundAddress: inboundAddressFor(business.id) })
+      .where(eq(businesses.id, business.id));
+  }
+
+  await db
+    .update(user)
+    .set({ businessId, emailVerified: true, updatedAt: new Date() })
+    .where(eq(user.id, userId));
+
+  return businessId as string;
+}
+
+async function main() {
+  const businessId = await recreateDemoUser();
+  await ensureDemoCatalog(businessId);
+  console.log("Demo user created with Better Auth sign-up.");
   console.log(`Sign in: ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
   process.exit(0);
 }

@@ -106,6 +106,7 @@ export const account = pgTable("account", {
   }),
   scope: text("scope"),
   password: text("password"),
+  issuer: text("issuer"),
   createdAt: timestamp("createdAt", { withTimezone: true })
     .defaultNow()
     .notNull(),
