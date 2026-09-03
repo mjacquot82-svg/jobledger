@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   assignInvoiceToJob,
+  approveInvoiceAllocations,
   editInvoiceAssignment,
   ingestUploadedInvoice,
 } from "@/lib/ingest";
@@ -31,6 +32,39 @@ export async function uploadInvoiceAction(formData: FormData) {
       ? `/invoices/${result.id}?duplicate=1`
       : `/invoices/${result.id}`,
   );
+}
+
+export async function approveInvoiceAllocationsAction(
+  invoiceId: string,
+  formData: FormData,
+) {
+  const session = await requireSession();
+  const jobIds = formData.getAll("allocationJobId").map(String);
+  const allocations = jobIds
+    .map((jobId) => ({
+      jobId,
+      categoryId: String(formData.get(`category:${jobId}`) ?? ""),
+      amountCents: dollarsToCents(
+        String(formData.get(`amount:${jobId}`) ?? ""),
+      ),
+    }))
+    .filter((row) => row.amountCents > 0);
+  const result = await approveInvoiceAllocations({
+    businessId: session.user.businessId,
+    invoiceId,
+    allocations,
+  });
+  if (!result) redirect(`/invoices/${invoiceId}?allocationError=not-found`);
+  if (!result.ok) {
+    const code = result.error.includes("equal") ? "total" : "invalid";
+    redirect(`/invoices/${invoiceId}?allocationError=${code}#allocations`);
+  }
+  for (const jobId of [...result.oldJobIds, ...result.jobIds]) {
+    revalidatePath(`/jobs/${jobId}`);
+  }
+  revalidatePath(`/invoices/${invoiceId}`);
+  revalidatePath("/dashboard");
+  redirect(`/invoices/${invoiceId}?allocationSaved=1#allocations`);
 }
 
 export async function editInvoiceAssignmentAction(

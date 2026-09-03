@@ -50,13 +50,48 @@ export function matchJobs(haystack: string, jobs: JobTag[]): MatchResult {
   };
 }
 
+export function matchInvoiceJobs(
+  sources: {
+    pdfText?: string | null;
+    emailBody?: string | null;
+    emailSubject?: string | null;
+    filename?: string | null;
+  },
+  jobs: JobTag[],
+) {
+  const tiers = [
+    { source: "PDF content", text: sources.pdfText },
+    { source: "email body", text: sources.emailBody },
+    { source: "email subject", text: sources.emailSubject },
+    { source: "filename", text: sources.filename },
+  ];
+  for (const tier of tiers) {
+    if (!tier.text) continue;
+    const result = matchJobs(tier.text, jobs);
+    if (result.status !== "unmatched") {
+      return {
+        ...result,
+        source: tier.source,
+        reason: `${result.reason} in ${tier.source}`,
+      };
+    }
+  }
+  return {
+    status: "unmatched" as const,
+    source: null,
+    reason: "No job tag found in PDF content, email, or filename",
+  };
+}
+
 export function extractInvoiceFields(text: string) {
   const invoiceNumber =
     text.match(/inv(?:oice)?\s*#?\s*([A-Z0-9][A-Z0-9\-]{1,24})/i)?.[1] ?? null;
 
-  const totalRaw = text.match(
-    /total[^\n$0-9]{0,20}\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})|[0-9]+\.[0-9]{2})/i,
-  )?.[1];
+  const totalRaw = [
+    ...text.matchAll(
+      /\b(?:grand\s+)?total\b[^\n$0-9]{0,20}\$?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})|[0-9]+\.[0-9]{2})/gi,
+    ),
+  ].at(-1)?.[1];
   const totalCents = totalRaw
     ? Math.round(Number(totalRaw.replace(/,/g, "")) * 100)
     : null;

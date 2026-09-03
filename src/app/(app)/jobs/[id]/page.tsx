@@ -4,7 +4,6 @@ import {
   addManualCostAction,
   createBillFromJobAction,
 } from "@/app/(app)/bills/actions";
-import { editInvoiceAssignmentAction } from "@/app/(app)/invoices/actions";
 import { SupplierInvoiceCard } from "@/components/supplier-invoice-card";
 import { listJobCosts } from "@/lib/job-costs";
 import { formatCad } from "@/lib/money";
@@ -12,7 +11,6 @@ import {
   getJob,
   jobCategoryTotals,
   listCostCategories,
-  listJobs,
   listJobInvoices,
 } from "@/lib/queries";
 import { requireSession } from "@/lib/session";
@@ -26,12 +24,11 @@ export default async function JobDetailPage({
   const session = await requireSession();
   const job = await getJob(session.user.businessId, id);
   if (!job) notFound();
-  const [categories, invoices, costs, costCategories, jobs] = await Promise.all([
+  const [categories, invoices, costs, costCategories] = await Promise.all([
     jobCategoryTotals(session.user.businessId, id),
     listJobInvoices(session.user.businessId, id),
     listJobCosts(session.user.businessId, id),
     listCostCategories(session.user.businessId),
-    listJobs(session.user.businessId),
   ]);
   const total = categories.reduce((sum, row) => sum + row.totalCents, 0);
 
@@ -160,15 +157,7 @@ export default async function JobDetailPage({
           <ul className="divide-y divide-stone-200">
             {invoices.map((invoice) => (
               <SupplierInvoiceCard
-                categories={costCategories}
-                currentJobId={job.id}
-                editAction={editInvoiceAssignmentAction.bind(
-                  null,
-                  invoice.id,
-                  job.id,
-                )}
                 invoice={invoice}
-                jobs={jobs}
                 key={invoice.id}
               />
             ))}

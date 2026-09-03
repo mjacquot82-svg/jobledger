@@ -2,6 +2,7 @@ import {
   boolean,
   date,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -236,8 +237,16 @@ export const invoices = pgTable(
     providerMessageId: text("provider_message_id"),
     emailSubject: text("email_subject"),
     emailFrom: text("email_from"),
+    emailText: text("email_text"),
     invoiceNumber: text("invoice_number"),
     invoiceDate: date("invoice_date"),
+    detectedJobTags: jsonb("detected_job_tags")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    allocationsApprovedAt: timestamp("allocations_approved_at", {
+      withTimezone: true,
+    }),
     totalCents: integer("total_cents"),
     currency: text("currency").notNull().default("CAD"),
     originalFilename: text("original_filename").notNull(),
@@ -302,9 +311,10 @@ export const jobCosts = pgTable("job_costs", {
     .defaultNow()
     .notNull(),
 }, (table) => [
-  uniqueIndex("job_costs_business_invoice_idx").on(
+  uniqueIndex("job_costs_business_invoice_job_idx").on(
     table.businessId,
     table.invoiceId,
+    table.jobId,
   ),
 ]);
 

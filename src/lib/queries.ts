@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   businesses,
@@ -151,7 +151,10 @@ export async function listInvoices(businessId: string) {
       status: invoices.status,
       originalFilename: invoices.originalFilename,
       invoiceNumber: invoices.invoiceNumber,
+      invoiceDate: invoices.invoiceDate,
       totalCents: invoices.totalCents,
+      detectedJobTags: invoices.detectedJobTags,
+      allocationsApprovedAt: invoices.allocationsApprovedAt,
       matchReason: invoices.matchReason,
       jobName: jobs.name,
       jobTag: jobs.jobTag,
@@ -165,6 +168,42 @@ export async function listInvoices(businessId: string) {
     .orderBy(desc(invoices.createdAt));
 }
 
+export async function listInvoiceAllocations(
+  businessId: string,
+  invoiceId: string,
+) {
+  const id = requireBusinessId(businessId);
+  return db
+    .select({
+      id: jobCosts.id,
+      jobId: jobCosts.jobId,
+      jobName: jobs.name,
+      jobTag: jobs.jobTag,
+      categoryId: jobCosts.categoryId,
+      categoryName: costCategories.name,
+      amountCents: jobCosts.amountCents,
+    })
+    .from(jobCosts)
+    .innerJoin(
+      jobs,
+      and(eq(jobs.id, jobCosts.jobId), eq(jobs.businessId, id)),
+    )
+    .innerJoin(
+      costCategories,
+      and(
+        eq(costCategories.id, jobCosts.categoryId),
+        eq(costCategories.businessId, id),
+      ),
+    )
+    .where(
+      and(
+        eq(jobCosts.businessId, id),
+        eq(jobCosts.invoiceId, invoiceId),
+      ),
+    )
+    .orderBy(jobs.name);
+}
+
 export async function getInvoice(businessId: string, invoiceId: string) {
   const id = requireBusinessId(businessId);
   const [row] = await db
@@ -173,6 +212,9 @@ export async function getInvoice(businessId: string, invoiceId: string) {
       status: invoices.status,
       originalFilename: invoices.originalFilename,
       invoiceNumber: invoices.invoiceNumber,
+      invoiceDate: invoices.invoiceDate,
+      detectedJobTags: invoices.detectedJobTags,
+      allocationsApprovedAt: invoices.allocationsApprovedAt,
       totalCents: invoices.totalCents,
       matchReason: invoices.matchReason,
       extractedText: invoices.extractedText,
@@ -217,6 +259,7 @@ export async function listJobInvoices(businessId: string, jobId: string) {
       invoiceDate: invoices.invoiceDate,
       totalCents: invoices.totalCents,
       supplierName: suppliers.name,
+      allocatedJobId: jobCosts.jobId,
       postedAmountCents: jobCosts.amountCents,
       costCategoryId: jobCosts.categoryId,
       costCategoryName: costCategories.name,
@@ -245,7 +288,7 @@ export async function listJobInvoices(businessId: string, jobId: string) {
     .where(
       and(
         eq(invoices.businessId, id),
-        eq(invoices.jobId, jobId),
+        or(eq(invoices.jobId, jobId), eq(jobCosts.jobId, jobId)),
       ),
     )
     .orderBy(desc(invoices.createdAt));

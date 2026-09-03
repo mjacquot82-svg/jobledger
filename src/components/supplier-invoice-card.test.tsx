@@ -7,9 +7,6 @@ describe("SupplierInvoiceCard", () => {
   it("renders useful invoice data and phone-friendly actions", () => {
     const html = renderToStaticMarkup(
       <SupplierInvoiceCard
-        categories={[{ id: "materials", name: "Materials" }]}
-        currentJobId="job-1"
-        editAction={async () => {}}
         invoice={{
           id: "invoice-1",
           status: "matched",
@@ -22,7 +19,6 @@ describe("SupplierInvoiceCard", () => {
           costCategoryId: "materials",
           costCategoryName: "Materials",
         }}
-        jobs={[{ id: "job-1", name: "Smith Garage", jobTag: "SMITH-001" }]}
       />,
     );
     expect(html).toContain("Supplier Ltd.");

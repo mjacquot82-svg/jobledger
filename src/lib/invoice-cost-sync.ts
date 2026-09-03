@@ -47,9 +47,16 @@ export function isAssignmentTenantSafe(
 }
 
 export function invoiceBelongsToJob(
-  invoice: { businessId: string; jobId: string | null },
+  invoice: {
+    businessId: string;
+    jobId: string | null;
+    allocatedJobId?: string | null;
+  },
   businessId: string,
   jobId: string,
 ) {
-  return invoice.businessId === businessId && invoice.jobId === jobId;
+  return (
+    invoice.businessId === businessId &&
+    (invoice.jobId === jobId || invoice.allocatedJobId === jobId)
+  );
 }

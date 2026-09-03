@@ -7,6 +7,18 @@ describe("job invoice visibility", () => {
       { id: "one", businessId: "business-a", jobId: "job-a" },
       { id: "two", businessId: "business-a", jobId: "job-b" },
       { id: "three", businessId: "business-b", jobId: "job-a" },
+      {
+        id: "split",
+        businessId: "business-a",
+        jobId: null,
+        allocatedJobId: "job-a",
+      },
+      {
+        id: "other-split",
+        businessId: "business-b",
+        jobId: null,
+        allocatedJobId: "job-a",
+      },
     ];
     expect(
       invoices
@@ -14,6 +26,6 @@ describe("job invoice visibility", () => {
           invoiceBelongsToJob(invoice, "business-a", "job-a"),
         )
         .map((invoice) => invoice.id),
-    ).toEqual(["one"]);
+    ).toEqual(["one", "split"]);
   });
 });

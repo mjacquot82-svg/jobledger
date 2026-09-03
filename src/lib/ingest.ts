@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { readFile } from "node:fs/promises";
 import { db } from "@/db";
 import { costCategories, invoices, jobCosts, jobs, suppliers } from "@/db/schema";
-import { extractInvoiceFields, matchJobs } from "./match";
+import { extractInvoiceFields, matchInvoiceJobs } from "./match";
 import {
   findInvoiceByNumber,
   findInvoiceByProviderMessage,
@@ -11,6 +11,11 @@ import { runOcr } from "./ocr";
 import { findInvoiceByHash } from "./queries";
 import { hashBuffer, storeInvoiceFile } from "./storage";
 import { isAssignmentTenantSafe, planInvoiceCostSync } from "./invoice-cost-sync";
+import {
+  allocationsAreTenantSafe,
+  type InvoiceAllocationInput,
+  validateInvoiceAllocations,
+} from "./invoice-allocations";
 
 export type IngestEmailMeta = {
   provider: string;
@@ -85,7 +90,7 @@ async function syncInvoiceCost(opts: {
     .insert(jobCosts)
     .values(plan.values)
     .onConflictDoUpdate({
-      target: [jobCosts.businessId, jobCosts.invoiceId],
+      target: [jobCosts.businessId, jobCosts.invoiceId, jobCosts.jobId],
       set: {
         jobId: plan.values.jobId,
         amountCents: plan.values.amountCents,
@@ -167,7 +172,15 @@ export async function ingestInvoiceAttachment(opts: {
     .select({ id: jobs.id, jobTag: jobs.jobTag })
     .from(jobs)
     .where(eq(jobs.businessId, opts.businessId));
-  const match = matchJobs(searchText, jobRows);
+  const match = matchInvoiceJobs(
+    {
+      pdfText: extractedText,
+      emailBody: opts.email?.text,
+      emailSubject: opts.email?.subject,
+      filename: opts.filename,
+    },
+    jobRows,
+  );
   const supplierId = await findOrCreateSupplier(
     opts.businessId,
     fields.supplierNameGuess,
@@ -201,8 +214,15 @@ export async function ingestInvoiceAttachment(opts: {
     providerMessageId: opts.email?.providerMessageId ?? null,
     emailSubject: opts.email?.subject ?? null,
     emailFrom: opts.email?.from ?? null,
+    emailText: opts.email?.text ?? null,
     invoiceNumber: fields.invoiceNumber,
     invoiceDate: fields.invoiceDate,
+    detectedJobTags:
+      match.status === "matched"
+        ? [match.jobTag]
+        : match.status === "needs_review"
+          ? match.tags
+          : [],
     totalCents: fields.totalCents,
     originalFilename: opts.filename,
     storedPath,
@@ -255,29 +275,42 @@ export async function reprocessStoredInvoice(opts: {
   const extractedText = await runOcr("local_pdf", buffer);
   if (!extractedText) return { ok: false as const, reason: "no PDF text" };
 
-  const searchText = haystack({
-    filename: invoice.originalFilename,
-    extractedText,
-    email: {
-      provider: invoice.provider ?? "forwarding",
-      providerMessageId: invoice.providerMessageId ?? undefined,
-      subject: invoice.emailSubject ?? undefined,
-      from: invoice.emailFrom ?? undefined,
-    },
-  });
   const fields = extractInvoiceFields(extractedText);
   const jobRows = await db
     .select({ id: jobs.id, jobTag: jobs.jobTag })
     .from(jobs)
     .where(eq(jobs.businessId, opts.businessId));
-  const match = matchJobs(searchText, jobRows);
+  const match = matchInvoiceJobs(
+    {
+      pdfText: extractedText,
+      emailBody: invoice.emailText,
+      emailSubject: invoice.emailSubject,
+      filename: invoice.originalFilename,
+    },
+    jobRows,
+  );
   const supplierId = await findOrCreateSupplier(
     opts.businessId,
     fields.supplierNameGuess,
   );
 
-  const status = match.status === "matched" ? "matched" : "needs_review";
-  const jobId = match.status === "matched" ? match.jobId : null;
+  const detectedJobTags =
+    match.status === "matched"
+      ? [match.jobTag]
+      : match.status === "needs_review"
+        ? match.tags
+        : [];
+  const approved = Boolean(invoice.allocationsApprovedAt);
+  const status = approved
+    ? invoice.status
+    : match.status === "matched"
+      ? "matched"
+      : "needs_review";
+  const jobId = approved
+    ? invoice.jobId
+    : match.status === "matched"
+      ? match.jobId
+      : null;
   await db
     .update(invoices)
     .set({
@@ -286,9 +319,12 @@ export async function reprocessStoredInvoice(opts: {
       status,
       invoiceNumber: fields.invoiceNumber,
       invoiceDate: fields.invoiceDate,
+      detectedJobTags,
       totalCents: fields.totalCents,
       extractedText,
-      matchReason: match.reason,
+      matchReason: approved
+        ? invoice.matchReason
+        : match.reason,
       supplierNameGuess: fields.supplierNameGuess,
     })
     .where(
@@ -298,13 +334,22 @@ export async function reprocessStoredInvoice(opts: {
       ),
     );
 
-  if (jobId && fields.totalCents) {
+  if (!approved && jobId && fields.totalCents) {
     await syncInvoiceCost({
       businessId: opts.businessId,
       jobId,
       invoiceId: invoice.id,
       amountCents: fields.totalCents,
     });
+  } else if (!approved && !jobId) {
+    await db
+      .delete(jobCosts)
+      .where(
+        and(
+          eq(jobCosts.businessId, opts.businessId),
+          eq(jobCosts.invoiceId, invoice.id),
+        ),
+      );
   }
   return { ok: true as const, totalCents: fields.totalCents, status, jobId };
 }
@@ -366,8 +411,27 @@ export async function editInvoiceAssignment(opts: {
   categoryId: string;
   amountCents: number;
 }) {
-  if (!Number.isInteger(opts.amountCents) || opts.amountCents < 0) return null;
-  const [[invoice], [job], [category]] = await Promise.all([
+  const result = await approveInvoiceAllocations({
+    businessId: opts.businessId,
+    invoiceId: opts.invoiceId,
+    allocations: [
+      {
+        jobId: opts.jobId,
+        categoryId: opts.categoryId,
+        amountCents: opts.amountCents,
+      },
+    ],
+  });
+  if (!result?.ok) return null;
+  return { oldJobId: result.oldJobIds[0] ?? null, jobId: opts.jobId };
+}
+
+export async function approveInvoiceAllocations(opts: {
+  businessId: string;
+  invoiceId: string;
+  allocations: InvoiceAllocationInput[];
+}) {
+  const [invoiceRows, jobRows, categoryRows] = await Promise.all([
     db
       .select()
       .from(invoices)
@@ -378,52 +442,76 @@ export async function editInvoiceAssignment(opts: {
         ),
       )
       .limit(1),
-    db
-      .select()
-      .from(jobs)
-      .where(
-        and(eq(jobs.id, opts.jobId), eq(jobs.businessId, opts.businessId)),
-      )
-      .limit(1),
+    db.select().from(jobs).where(eq(jobs.businessId, opts.businessId)),
     db
       .select()
       .from(costCategories)
-      .where(
-        and(
-          eq(costCategories.id, opts.categoryId),
-          eq(costCategories.businessId, opts.businessId),
-        ),
-      )
-      .limit(1),
+      .where(eq(costCategories.businessId, opts.businessId)),
   ]);
+  const invoice = invoiceRows[0];
+  if (!invoice || !isAssignmentTenantSafe(opts.businessId, [invoice])) return null;
+  const validation = validateInvoiceAllocations(invoice.totalCents, opts.allocations);
+  if (!validation.ok) return validation;
   if (
-    !invoice ||
-    !job ||
-    !category ||
-    !isAssignmentTenantSafe(opts.businessId, [invoice, job, category])
+    !allocationsAreTenantSafe(
+      opts.businessId,
+      validation.allocations,
+      jobRows,
+      categoryRows,
+    )
   ) {
-    return null;
+    return { ok: false as const, error: "Invalid job or category" };
   }
 
-  await db
-    .update(invoices)
-    .set({
-      jobId: job.id,
-      status: "matched",
-      matchReason: `Assignment edited to ${job.jobTag ?? job.name}`,
-    })
+  const existingCosts = await db
+    .select({ jobId: jobCosts.jobId })
+    .from(jobCosts)
     .where(
       and(
-        eq(invoices.id, invoice.id),
-        eq(invoices.businessId, opts.businessId),
+        eq(jobCosts.businessId, opts.businessId),
+        eq(jobCosts.invoiceId, invoice.id),
       ),
     );
-  await syncInvoiceCost({
-    businessId: opts.businessId,
-    invoiceId: invoice.id,
-    jobId: job.id,
-    categoryId: category.id,
-    amountCents: opts.amountCents,
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(jobCosts)
+      .where(
+        and(
+          eq(jobCosts.businessId, opts.businessId),
+          eq(jobCosts.invoiceId, invoice.id),
+        ),
+      );
+    await tx.insert(jobCosts).values(
+      validation.allocations.map((allocation) => ({
+        businessId: opts.businessId,
+        invoiceId: invoice.id,
+        jobId: allocation.jobId,
+        categoryId: allocation.categoryId,
+        amountCents: allocation.amountCents,
+        sourceType: "invoice" as const,
+      })),
+    );
+    const one = validation.allocations.length === 1 ? validation.allocations[0] : null;
+    await tx
+      .update(invoices)
+      .set({
+        jobId: one?.jobId ?? null,
+        status: "matched",
+        allocationsApprovedAt: new Date(),
+        matchReason: one
+          ? "Manual allocation approved for one job"
+          : `Split approved across ${validation.allocations.length} jobs`,
+      })
+      .where(
+        and(
+          eq(invoices.id, invoice.id),
+          eq(invoices.businessId, opts.businessId),
+        ),
+      );
   });
-  return { oldJobId: invoice.jobId, jobId: job.id };
+  return {
+    ok: true as const,
+    oldJobIds: [...new Set([invoice.jobId, ...existingCosts.map((row) => row.jobId)].filter(Boolean))] as string[],
+    jobIds: validation.allocations.map((row) => row.jobId),
+  };
 }

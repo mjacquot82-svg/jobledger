@@ -15,8 +15,6 @@ type Invoice = {
   costCategoryName: string | null;
 };
 
-type Option = { id: string; name: string; jobTag?: string | null };
-
 function invoiceDate(value: string | null) {
   if (!value) return "Not found";
   return new Intl.DateTimeFormat("en-CA", {
@@ -29,16 +27,8 @@ function invoiceDate(value: string | null) {
 
 export function SupplierInvoiceCard({
   invoice,
-  currentJobId,
-  jobs,
-  categories,
-  editAction,
 }: {
   invoice: Invoice;
-  currentJobId: string;
-  jobs: Option[];
-  categories: Option[];
-  editAction: (formData: FormData) => void | Promise<void>;
 }) {
   return (
     <li className="p-4 sm:p-5" data-testid="supplier-invoice-card">
@@ -103,68 +93,18 @@ export function SupplierInvoiceCard({
           Download
         </a>
         <Link
-          className="col-span-2 min-h-11 rounded-lg border border-stone-300 px-3 py-2.5 text-center text-sm font-medium sm:ml-auto"
+          className="min-h-11 rounded-lg border border-stone-300 px-3 py-2.5 text-center text-sm font-medium"
           href={`/invoices/${invoice.id}`}
         >
           Invoice details
         </Link>
-      </div>
-
-      <details className="mt-3 rounded-lg border border-stone-200 bg-stone-50 p-3">
-        <summary className="cursor-pointer text-sm font-medium text-amber-800">
+        <Link
+          className="min-h-11 rounded-lg border border-stone-300 px-3 py-2.5 text-center text-sm font-medium sm:ml-auto"
+          href={`/invoices/${invoice.id}#allocations`}
+        >
           Edit assignment
-        </summary>
-        <form action={editAction} className="mt-3 grid gap-3 sm:grid-cols-3">
-          <label className="text-sm">
-            Job
-            <select
-              className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5"
-              defaultValue={currentJobId}
-              name="jobId"
-              required
-            >
-              {jobs.map((job) => (
-                <option key={job.id} value={job.id}>
-                  {job.jobTag ? `${job.jobTag} · ` : ""}{job.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            Cost category
-            <select
-              className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5"
-              defaultValue={invoice.costCategoryId ?? ""}
-              name="categoryId"
-              required
-            >
-              <option disabled value="">Select category</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>{category.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            Posted amount (CAD)
-            <input
-              className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5"
-              defaultValue={((invoice.postedAmountCents ?? invoice.totalCents ?? 0) / 100).toFixed(2)}
-              inputMode="decimal"
-              min="0"
-              name="amount"
-              required
-              step="0.01"
-              type="number"
-            />
-          </label>
-          <button
-            className="min-h-11 rounded-lg bg-amber-800 px-4 py-2.5 text-sm font-medium text-white sm:col-span-3"
-            type="submit"
-          >
-            Save assignment
-          </button>
-        </form>
-      </details>
+        </Link>
+      </div>
     </li>
   );
 }

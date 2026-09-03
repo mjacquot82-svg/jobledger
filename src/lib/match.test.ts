@@ -4,7 +4,7 @@ import {
   inboundAddressFor,
   isInvoiceAttachment,
 } from "./email-ingest";
-import { extractInvoiceFields, matchJobs } from "./match";
+import { extractInvoiceFields, matchInvoiceJobs, matchJobs } from "./match";
 
 const jobs = [
   { id: "1", jobTag: "SMITH-001" },
@@ -98,6 +98,12 @@ describe("matchJobs", () => {
 });
 
 describe("extractInvoiceFields", () => {
+  it("uses the final invoice total rather than a subtotal", () => {
+    expect(
+      extractInvoiceFields("Subtotal $100.00\nTax $13.00\nTotal $113.00")
+        .totalCents,
+    ).toBe(11300);
+  });
   it("pulls invoice number and total as cents", () => {
     const fields = extractInvoiceFields(
       "Home Depot\nInvoice INV-1001\nTotal $1,250.40",
@@ -112,6 +118,57 @@ describe("extractInvoiceFields", () => {
       extractInvoiceFields("Supplier\nInvoice INV-2\nInvoice Date: 09/03/2026")
         .invoiceDate,
     ).toBe("2026-09-03");
+  });
+});
+
+describe("matchInvoiceJobs priority", () => {
+  it("finds a job code in a product line inside PDF text", () => {
+    const result = matchInvoiceJobs(
+      {
+        pdfText: "1  Cedar boards for SMITH-001  $120.00",
+        emailSubject: "Invoice for WILSON-002",
+      },
+      jobs,
+    );
+    expect(result).toMatchObject({ status: "matched", jobId: "1", source: "PDF content" });
+  });
+
+  it("finds a job code in a PDF PO/reference field", () => {
+    const result = matchInvoiceJobs(
+      { pdfText: "PO / Reference: CHEN-003", filename: "SMITH-001.pdf" },
+      jobs,
+    );
+    expect(result).toMatchObject({ status: "matched", jobId: "3", source: "PDF content" });
+  });
+
+  it("returns every valid PDF job code for review without using fallbacks", () => {
+    const result = matchInvoiceJobs(
+      {
+        pdfText: "Fasteners SMITH-001\nTile adhesive WILSON-002",
+        emailBody: "CHEN-003",
+      },
+      jobs,
+    );
+    expect(result).toMatchObject({
+      status: "needs_review",
+      tags: ["SMITH-001", "WILSON-002"],
+      source: "PDF content",
+    });
+  });
+
+  it("uses body, subject, and filename only as ordered fallbacks", () => {
+    expect(
+      matchInvoiceJobs(
+        { pdfText: "No code", emailBody: "WILSON-002", emailSubject: "CHEN-003" },
+        jobs,
+      ),
+    ).toMatchObject({ jobId: "2", source: "email body" });
+    expect(
+      matchInvoiceJobs(
+        { pdfText: "No code", emailBody: "No code", emailSubject: "CHEN-003" },
+        jobs,
+      ),
+    ).toMatchObject({ jobId: "3", source: "email subject" });
   });
 });
 
