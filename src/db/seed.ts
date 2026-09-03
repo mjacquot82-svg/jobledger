@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 import { db } from "./";
 import {
@@ -24,6 +24,36 @@ const DEFAULT_CATEGORIES = [
   { name: "Other", sortOrder: 5 },
 ];
 
+async function ensureDemoCredential(userId: string) {
+  const password = await hashPassword(DEMO_PASSWORD);
+  const [existingAccount] = await db
+    .select()
+    .from(account)
+    .where(
+      and(eq(account.userId, userId), eq(account.providerId, "credential")),
+    )
+    .limit(1);
+
+  if (existingAccount) {
+    await db
+      .update(account)
+      .set({ password, updatedAt: new Date() })
+      .where(eq(account.id, existingAccount.id));
+    return;
+  }
+
+  const now = new Date();
+  await db.insert(account).values({
+    id: crypto.randomUUID(),
+    accountId: userId,
+    providerId: "credential",
+    userId,
+    password,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 async function main() {
   const existing = await db
     .select()
@@ -32,8 +62,9 @@ async function main() {
     .limit(1);
 
   if (existing[0]?.businessId) {
-    console.log("Demo data already present. Sign in with");
-    console.log(`  ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
+    await ensureDemoCredential(existing[0].id);
+    console.log("Demo user already present; refreshed credential password.");
+    console.log(`Sign in: ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
     process.exit(0);
   }
 
@@ -64,15 +95,7 @@ async function main() {
     updatedAt: now,
   });
 
-  await db.insert(account).values({
-    id: crypto.randomUUID(),
-    accountId: userId,
-    providerId: "credential",
-    userId,
-    password: await hashPassword(DEMO_PASSWORD),
-    createdAt: now,
-    updatedAt: now,
-  });
+  await ensureDemoCredential(userId);
 
   await db.insert(costCategories).values(
     DEFAULT_CATEGORIES.map((category) => ({
@@ -128,7 +151,8 @@ async function main() {
       jobTag: "SMITH-001",
       status: "active",
       addressLine1: "123 Example Road",
-      notes: "Detached garage rebuild. Put SMITH-001 on supplier invoices to auto-match.",
+      notes:
+        "Detached garage rebuild. Put SMITH-001 on supplier invoices to auto-match.",
     },
     {
       businessId: business.id,
