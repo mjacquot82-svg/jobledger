@@ -175,6 +175,13 @@ async function recreateDemoUser() {
 
 async function main() {
   const businessId = await recreateDemoUser();
+  const stagingInboundAddress = process.env.STAGING_INBOUND_ADDRESS?.trim();
+  if (stagingInboundAddress) {
+    await db
+      .update(businesses)
+      .set({ inboundAddress: stagingInboundAddress.toLowerCase() })
+      .where(eq(businesses.id, businessId));
+  }
   await ensureDemoCatalog(businessId);
   console.log("Demo user created with Better Auth sign-up.");
   console.log(`Sign in: ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);

@@ -164,7 +164,7 @@ export async function ingestInvoiceAttachment(opts: {
   } else if (match.status === "needs_review") {
     status = "needs_review";
   } else {
-    status = "unmatched";
+    status = "needs_review";
   }
 
   await db.insert(invoices).values({

@@ -13,7 +13,10 @@ export async function storeInvoiceFile(
   filename: string,
 ) {
   const ext = path.extname(filename).toLowerCase() || ".pdf";
-  const dir = path.join(process.cwd(), ".data", "invoices", businessId);
+  const root =
+    process.env.INVOICE_STORAGE_ROOT?.trim() ||
+    path.join(process.cwd(), ".data", "invoices");
+  const dir = path.join(root, businessId);
   await mkdir(dir, { recursive: true });
   const storedPath = path.join(dir, `${invoiceId}${ext}`);
   await writeFile(storedPath, buffer);

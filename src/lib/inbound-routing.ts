@@ -5,22 +5,20 @@ import { extractEmailAddresses, inboundAddressFor } from "./email-ingest";
 
 export async function findBusinessByInboundAddress(rawTo: string) {
   const addresses = extractEmailAddresses(rawTo);
-  for (const address of addresses) {
-    const [row] = await db
-      .select()
-      .from(businesses)
-      .where(eq(businesses.inboundAddress, address))
-      .limit(1);
-    if (row) return row;
-  }
+  const rows = await db.select().from(businesses);
+  const matches = rows.filter((row) => {
+    const configured = row.inboundAddress?.toLowerCase();
+    const expected = configured || inboundAddressFor(row.id);
+    return addresses.includes(expected);
+  });
+  const unique = [...new Map(matches.map((row) => [row.id, row])).values()];
 
-  const rows = await db.select({ id: businesses.id, inboundAddress: businesses.inboundAddress }).from(businesses);
-  const match = rows.find((row) => addresses.includes(inboundAddressFor(row.id)));
-  if (!match) return null;
+  // A delivery naming multiple tenants is never safe to assign automatically.
+  if (unique.length !== 1) return null;
   const [business] = await db
     .select()
     .from(businesses)
-    .where(eq(businesses.id, match.id))
+    .where(eq(businesses.id, unique[0].id))
     .limit(1);
   return business ?? null;
 }

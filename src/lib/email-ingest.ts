@@ -66,6 +66,6 @@ export function emailIngestStatus(connectedProvider?: string | null) {
   return {
     connected: false,
     reason:
-      "Connect Email is the recommended option (Gmail, Outlook, Hotmail, Microsoft 365). We own the connection. Forwarding to the address above also works. Neither live mailbox is on yet; the inbound webhook is for local proof.",
+      "Forward a text-based PDF here manually, or add an automatic forwarding rule in Gmail, Outlook, Hotmail, or Microsoft 365. Scanned images need OCR and are not enabled.",
   };
 }

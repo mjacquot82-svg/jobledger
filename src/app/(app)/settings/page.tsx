@@ -71,8 +71,13 @@ export default async function SettingsPage() {
       </section>
       <section className="rounded-xl border border-stone-200 bg-white p-4 text-sm">
         <h2 className="font-medium">Forward invoices</h2>
+        <p className="mt-2 font-medium text-amber-800">Staging/test address</p>
         <p className="mt-2 break-all font-mono text-stone-800">{inbound}</p>
         <p className="mt-2 text-stone-600">{email.reason}</p>
+        <p className="mt-2 text-stone-600">
+          Free-plan limit: 512 KB for the entire email, including its PDF and
+          message content. Keep test PDFs comfortably below 512 KB.
+        </p>
       </section>
       <section className="rounded-xl border border-stone-200 bg-white p-4 text-sm text-stone-600">
         <h2 className="font-medium text-stone-900">OCR</h2>

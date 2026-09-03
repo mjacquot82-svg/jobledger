@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  attachmentBytes,
+  CLOUDMAILIN_MESSAGE_LIMIT_BYTES,
+  isCloudMailinAuthorized,
+  parseCloudMailinForm,
+} from "@/lib/cloudmailin";
+import {
   extractEmailAddresses,
   isInvoiceAttachment,
   type InboundAttachment,
@@ -7,18 +13,6 @@ import {
 } from "@/lib/email-ingest";
 import { findBusinessByInboundAddress } from "@/lib/inbound-routing";
 import { ingestInvoiceAttachment } from "@/lib/ingest";
-
-function webhookSecret() {
-  return process.env.INBOUND_WEBHOOK_SECRET?.trim() ?? "";
-}
-
-function isAuthorized(request: NextRequest) {
-  const secret = webhookSecret();
-  if (!secret) return false;
-  const header = request.headers.get("authorization");
-  const alt = request.headers.get("x-inbound-secret");
-  return header === `Bearer ${secret}` || alt === secret;
-}
 
 function isPdf(attachment: InboundAttachment) {
   const name = attachment.filename.toLowerCase();
@@ -61,44 +55,30 @@ async function parseBody(request: NextRequest) {
     };
   }
 
-  const form = await request.formData();
-  const attachments: InboundAttachment[] = [];
-  for (const [key, value] of form.entries()) {
-    if (
-      value instanceof File &&
-      (key === "file" || key === "attachment" || key === "attachments")
-    ) {
-      attachments.push({
-        filename: value.name,
-        contentType: value.type,
-        buffer: Buffer.from(await value.arrayBuffer()),
-      });
-    }
-  }
-  return {
-    to: String(form.get("to") ?? ""),
-    from: String(form.get("from") ?? "") || undefined,
-    subject: String(form.get("subject") ?? "") || undefined,
-    text: String(form.get("text") ?? "") || undefined,
-    provider: (String(form.get("provider") ?? "forwarding") ||
-      "forwarding") as MailboxProvider,
-    providerMessageId: String(form.get("providerMessageId") ?? "") || undefined,
-    attachments,
-  };
+  return parseCloudMailinForm(await request.formData());
 }
 
 export async function POST(request: NextRequest) {
-  if (!webhookSecret()) {
+  if (
+    !process.env.CLOUDMAILIN_BASIC_USERNAME?.trim() ||
+    !process.env.CLOUDMAILIN_BASIC_PASSWORD
+  ) {
     return NextResponse.json(
       { ok: false, error: "inbound not configured" },
       { status: 503 },
     );
   }
-  if (!isAuthorized(request)) {
+  if (!isCloudMailinAuthorized(request.headers.get("authorization"))) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
   const inbound = await parseBody(request);
+  if (attachmentBytes(inbound) > CLOUDMAILIN_MESSAGE_LIMIT_BYTES) {
+    return NextResponse.json(
+      { ok: false, error: "attachments exceed the 512 KB staging limit" },
+      { status: 413 },
+    );
+  }
   if (!extractEmailAddresses(inbound.to).length) {
     return NextResponse.json({ ok: true, invoices: [], ignored: "no recipient" });
   }

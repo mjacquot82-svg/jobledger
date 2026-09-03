@@ -19,7 +19,7 @@ const withNumber = [
 ];
 
 describe("matchJobs", () => {
-  it("matches a single job tag in PDF text", () => {
+  it("matches an emailed invoice to a job when exactly one valid tag is found", () => {
     const result = matchJobs("Home Depot invoice for SMITH-001\nTotal $250.00", jobs);
     expect(result.status).toBe("matched");
     if (result.status === "matched") {
@@ -78,7 +78,7 @@ describe("matchJobs", () => {
     expect(result.status).toBe("unmatched");
   });
 
-  it("sends multiple tags to needs review instead of guessing", () => {
+  it("sends an uncertain emailed invoice to Needs Review", () => {
     const result = matchJobs("Charge to SMITH-001 and WILSON-002", jobs);
     expect(result.status).toBe("needs_review");
     if (result.status === "needs_review") {

@@ -41,27 +41,29 @@ Change `BETTER_AUTH_SECRET` in `.env` to any long random string before sharing t
 - Bill customer from job costs (draft → issued → paid). Nothing is emailed
 - Optional markup % in Settings
 - Reports: costs vs billed per job
-- Provider-neutral inbound webhook for forwarded invoice mail (local proof)
+- CloudMailin Multipart–Normalized inbound webhook for forwarded invoice mail
 - Settings: unique forwarding address, Connect Email shown as coming soon
 
 Seed includes **Smith Garage** (`SMITH-001`) for John Smith and a Home Depot supplier. Try `fixtures/SMITH-001-home-depot.txt` printed to PDF, or any PDF named with `SMITH-001`.
 
-## Prove forwarding locally
+## CloudMailin forwarding
 
-The webhook is what Postmark/SES/CloudMailin would call later. Same pipeline as upload.
+CloudMailin posts Multipart–Normalized messages to `/api/inbound/email`. The
+target must use HTTPS and an Authorization header generated from the same Basic
+Authentication username/password held in `CLOUDMAILIN_BASIC_USERNAME` and
+`CLOUDMAILIN_BASIC_PASSWORD`.
 
-1. Sign in, open Settings, copy the Forward invoices address.
-2. Put `INBOUND_WEBHOOK_SECRET=dev-inbound-secret` in `.env`.
-3. With the app running:
+For Railway staging:
 
-```bash
-curl -X POST http://localhost:3000/api/inbound/email \
-  -H "Authorization: Bearer dev-inbound-secret" \
-  -F "to=PASTE_INBOUND_ADDRESS_HERE" \
-  -F "from=supplier@example.com" \
-  -F "subject=Invoice SMITH-001" \
-  -F "file=@./your-invoice.pdf"
-```
+1. Mount a persistent volume at `/data/invoices` and set
+   `INVOICE_STORAGE_ROOT=/data/invoices`.
+2. Set `STAGING_INBOUND_ADDRESS` to the CloudMailin receiving address.
+3. Set both CloudMailin Basic Authentication variables only in Railway.
+4. Set CloudMailin's HTTPS target to the Railway URL plus `/api/inbound/email`.
+
+The free-plan limit is 512 KB for the entire message, including the attachment
+and email body. Keep test PDFs comfortably smaller. Only text-based PDFs are
+processed; paid OCR remains disabled.
 
 A job tag or number in the subject, file name, or PDF text matches. No tag, or two tags, goes to Needs review. Jobs with no tag stay unmatched until you assign them.
 
@@ -70,7 +72,7 @@ Connect Email (Gmail / Outlook / Hotmail / Microsoft 365, platform-owned OAuth) 
 ## What is still off until you say so
 
 - Live Connect Email OAuth
-- A real inbound domain / MX (forwarding from a real mailbox)
+- Paid CloudMailin capacity above the free staging limit
 - Paid OCR (needed for photo attachments)
 - Production hosting
 - PunchClock labour sync
