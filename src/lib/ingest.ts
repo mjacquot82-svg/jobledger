@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import { readFile } from "node:fs/promises";
 import { db } from "@/db";
 import { costCategories, invoices, jobCosts, jobs, suppliers } from "@/db/schema";
 import { extractInvoiceFields, matchJobs } from "./match";
@@ -119,7 +120,9 @@ export async function ingestInvoiceAttachment(opts: {
     extractedText,
     email: opts.email,
   });
-  const fields = extractInvoiceFields(searchText);
+  // Supplier invoice fields should come from the document when possible.
+  // Forwarded email prose may contain unrelated phrases such as "invoice test".
+  const fields = extractInvoiceFields(extractedText || searchText);
 
   if (fields.invoiceNumber) {
     const numberDup = await findInvoiceByNumber(
@@ -209,6 +212,79 @@ export async function ingestUploadedInvoice(opts: {
     ...opts,
     source: "upload",
   });
+}
+
+export async function reprocessStoredInvoice(opts: {
+  businessId: string;
+  invoiceId: string;
+}) {
+  const [invoice] = await db
+    .select()
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.id, opts.invoiceId),
+        eq(invoices.businessId, opts.businessId),
+      ),
+    )
+    .limit(1);
+  if (!invoice) return null;
+
+  const buffer = await readFile(invoice.storedPath);
+  const extractedText = await runOcr("local_pdf", buffer);
+  if (!extractedText) return { ok: false as const, reason: "no PDF text" };
+
+  const searchText = haystack({
+    filename: invoice.originalFilename,
+    extractedText,
+    email: {
+      provider: invoice.provider ?? "forwarding",
+      providerMessageId: invoice.providerMessageId ?? undefined,
+      subject: invoice.emailSubject ?? undefined,
+      from: invoice.emailFrom ?? undefined,
+    },
+  });
+  const fields = extractInvoiceFields(extractedText);
+  const jobRows = await db
+    .select({ id: jobs.id, jobTag: jobs.jobTag })
+    .from(jobs)
+    .where(eq(jobs.businessId, opts.businessId));
+  const match = matchJobs(searchText, jobRows);
+  const supplierId = await findOrCreateSupplier(
+    opts.businessId,
+    fields.supplierNameGuess,
+  );
+
+  const status = match.status === "matched" ? "matched" : "needs_review";
+  const jobId = match.status === "matched" ? match.jobId : null;
+  await db
+    .update(invoices)
+    .set({
+      supplierId,
+      jobId,
+      status,
+      invoiceNumber: fields.invoiceNumber,
+      totalCents: fields.totalCents,
+      extractedText,
+      matchReason: match.reason,
+      supplierNameGuess: fields.supplierNameGuess,
+    })
+    .where(
+      and(
+        eq(invoices.id, invoice.id),
+        eq(invoices.businessId, opts.businessId),
+      ),
+    );
+
+  if (jobId && fields.totalCents) {
+    await postInvoiceCost({
+      businessId: opts.businessId,
+      jobId,
+      invoiceId: invoice.id,
+      amountCents: fields.totalCents,
+    });
+  }
+  return { ok: true as const, totalCents: fields.totalCents, status, jobId };
 }
 
 export async function assignInvoiceToJob(opts: {
