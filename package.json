@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
-    "start": "next start",
+    "start": "npx --yes drizzle-kit@0.31.4 push --force && npx --yes tsx src/db/seed.ts && next start",
     "test": "vitest run",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
