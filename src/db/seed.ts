@@ -3,12 +3,10 @@ import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "./";
 import {
-  account,
   businesses,
   costCategories,
   customers,
   jobs,
-  session,
   suppliers,
   user,
 } from "./schema";
@@ -125,17 +123,17 @@ async function ensureDemoCatalog(businessId: string) {
   ]);
 }
 
-async function recreateDemoUser() {
+async function ensureDemoUser() {
   const [existing] = await db
     .select()
     .from(user)
     .where(eq(user.email, DEMO_EMAIL))
     .limit(1);
 
-  if (existing) {
-    await db.delete(session).where(eq(session.userId, existing.id));
-    await db.delete(account).where(eq(account.userId, existing.id));
-    await db.delete(user).where(eq(user.id, existing.id));
+  if (existing?.businessId) {
+    // Startup seeding must be idempotent. Recreating this user invalidates every
+    // active session on each deployment and can produce a login redirect loop.
+    return existing.businessId;
   }
 
   const signedUp = await auth.api.signUpEmail({
@@ -147,7 +145,7 @@ async function recreateDemoUser() {
   });
 
   const userId = signedUp.user.id;
-  let businessId = existing?.businessId ?? null;
+  let businessId: string | null = null;
 
   if (!businessId) {
     const [business] = await db
@@ -174,7 +172,7 @@ async function recreateDemoUser() {
 }
 
 async function main() {
-  const businessId = await recreateDemoUser();
+  const businessId = await ensureDemoUser();
   const stagingInboundAddress = process.env.STAGING_INBOUND_ADDRESS?.trim();
   if (stagingInboundAddress) {
     await db

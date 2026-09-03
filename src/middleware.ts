@@ -9,10 +9,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (sessionCookie && isLogin) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
-  }
-
+  // Cookie presence does not prove that its database session is still valid.
+  // Always allow /login so stale cookies cannot loop with requireSession().
   return NextResponse.next();
 }
 
