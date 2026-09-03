@@ -9,13 +9,9 @@ import {
   jobs,
   suppliers,
 } from "@/db/schema";
+import { requireBusinessId } from "./tenant";
 
-export function requireBusinessId(businessId: string | null | undefined) {
-  if (!businessId) {
-    throw new Error("business_id is required on every query");
-  }
-  return businessId;
-}
+export { requireBusinessId };
 
 export async function getBusiness(businessId: string) {
   const id = requireBusinessId(businessId);

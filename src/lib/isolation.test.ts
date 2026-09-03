@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { requireBusinessId } from "./queries";
+import { requireBusinessId } from "./tenant";
 
 describe("tenant isolation", () => {
   it("refuses queries without a business id", () => {
