@@ -34,6 +34,13 @@ export default async function InvoiceDetailPage({
           {invoice.supplierName ?? invoice.originalFilename}
         </h1>
         <p className="mt-1 text-sm text-stone-600">{invoice.originalFilename}</p>
+        <a
+          className="mt-2 inline-block text-sm font-medium text-amber-800"
+          href={`/api/invoices/${invoice.id}/file`}
+          target="_blank"
+        >
+          Open original PDF
+        </a>
       </div>
       {query.duplicate === "1" ? (
         <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">

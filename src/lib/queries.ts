@@ -190,6 +190,19 @@ export async function getInvoice(businessId: string, invoiceId: string) {
   return row ?? null;
 }
 
+export async function getInvoiceFile(businessId: string, invoiceId: string) {
+  const id = requireBusinessId(businessId);
+  const [row] = await db
+    .select({
+      storedPath: invoices.storedPath,
+      originalFilename: invoices.originalFilename,
+    })
+    .from(invoices)
+    .where(and(eq(invoices.businessId, id), eq(invoices.id, invoiceId)))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function listJobInvoices(businessId: string, jobId: string) {
   const id = requireBusinessId(businessId);
   return db
