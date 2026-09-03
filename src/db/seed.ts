@@ -54,6 +54,106 @@ async function ensureDemoCredential(userId: string) {
   });
 }
 
+async function ensureDemoCatalog(businessId: string) {
+  const existingCategories = await db
+    .select()
+    .from(costCategories)
+    .where(eq(costCategories.businessId, businessId))
+    .limit(1);
+  if (!existingCategories[0]) {
+    await db.insert(costCategories).values(
+      DEFAULT_CATEGORIES.map((category) => ({
+        businessId,
+        name: category.name,
+        sortOrder: category.sortOrder,
+      })),
+    );
+  }
+
+  const existingSupplier = await db
+    .select()
+    .from(suppliers)
+    .where(
+      and(eq(suppliers.businessId, businessId), eq(suppliers.name, "Home Depot")),
+    )
+    .limit(1);
+  if (!existingSupplier[0]) {
+    await db.insert(suppliers).values({
+      businessId,
+      name: "Home Depot",
+    });
+  }
+
+  const existingJobs = await db
+    .select()
+    .from(jobs)
+    .where(eq(jobs.businessId, businessId))
+    .limit(1);
+  if (existingJobs[0]) return;
+
+  const [smith] = await db
+    .insert(customers)
+    .values({
+      businessId,
+      name: "John Smith",
+      addressLine1: "123 Example Road",
+      city: "Toronto",
+      region: "ON",
+    })
+    .returning();
+
+  const [wilson] = await db
+    .insert(customers)
+    .values({
+      businessId,
+      name: "Amy Wilson",
+      addressLine1: "45 Maple Street",
+      city: "Mississauga",
+      region: "ON",
+    })
+    .returning();
+
+  const [chen] = await db
+    .insert(customers)
+    .values({
+      businessId,
+      name: "David Chen",
+      addressLine1: "88 Harbour Drive",
+      city: "Oakville",
+      region: "ON",
+    })
+    .returning();
+
+  await db.insert(jobs).values([
+    {
+      businessId,
+      customerId: smith.id,
+      name: "Smith Garage",
+      jobTag: "SMITH-001",
+      status: "active",
+      addressLine1: "123 Example Road",
+      notes:
+        "Detached garage rebuild. Put SMITH-001 on supplier invoices to auto-match.",
+    },
+    {
+      businessId,
+      customerId: wilson.id,
+      name: "Wilson Kitchen",
+      jobTag: "WILSON-002",
+      status: "active",
+      addressLine1: "45 Maple Street",
+    },
+    {
+      businessId,
+      customerId: chen.id,
+      name: "Chen Deck",
+      jobTag: "CHEN-003",
+      status: "completed",
+      addressLine1: "88 Harbour Drive",
+    },
+  ]);
+}
+
 async function main() {
   const existing = await db
     .select()
@@ -63,7 +163,8 @@ async function main() {
 
   if (existing[0]?.businessId) {
     await ensureDemoCredential(existing[0].id);
-    console.log("Demo user already present; refreshed credential password.");
+    await ensureDemoCatalog(existing[0].businessId);
+    console.log("Demo user repaired; password refreshed and catalog ensured.");
     console.log(`Sign in: ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
     process.exit(0);
   }
@@ -96,81 +197,7 @@ async function main() {
   });
 
   await ensureDemoCredential(userId);
-
-  await db.insert(costCategories).values(
-    DEFAULT_CATEGORIES.map((category) => ({
-      businessId: business.id,
-      name: category.name,
-      sortOrder: category.sortOrder,
-    })),
-  );
-
-  await db.insert(suppliers).values({
-    businessId: business.id,
-    name: "Home Depot",
-  });
-
-  const [smith] = await db
-    .insert(customers)
-    .values({
-      businessId: business.id,
-      name: "John Smith",
-      addressLine1: "123 Example Road",
-      city: "Toronto",
-      region: "ON",
-    })
-    .returning();
-
-  const [wilson] = await db
-    .insert(customers)
-    .values({
-      businessId: business.id,
-      name: "Amy Wilson",
-      addressLine1: "45 Maple Street",
-      city: "Mississauga",
-      region: "ON",
-    })
-    .returning();
-
-  const [chen] = await db
-    .insert(customers)
-    .values({
-      businessId: business.id,
-      name: "David Chen",
-      addressLine1: "88 Harbour Drive",
-      city: "Oakville",
-      region: "ON",
-    })
-    .returning();
-
-  await db.insert(jobs).values([
-    {
-      businessId: business.id,
-      customerId: smith.id,
-      name: "Smith Garage",
-      jobTag: "SMITH-001",
-      status: "active",
-      addressLine1: "123 Example Road",
-      notes:
-        "Detached garage rebuild. Put SMITH-001 on supplier invoices to auto-match.",
-    },
-    {
-      businessId: business.id,
-      customerId: wilson.id,
-      name: "Wilson Kitchen",
-      jobTag: "WILSON-002",
-      status: "active",
-      addressLine1: "45 Maple Street",
-    },
-    {
-      businessId: business.id,
-      customerId: chen.id,
-      name: "Chen Deck",
-      jobTag: "CHEN-003",
-      status: "completed",
-      addressLine1: "88 Harbour Drive",
-    },
-  ]);
+  await ensureDemoCatalog(business.id);
 
   console.log("Seeded Jacquot Demo Contracting.");
   console.log(`Sign in: ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
