@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { assignInvoiceToJob, ingestUploadedInvoice } from "@/lib/ingest";
+import {
+  assignInvoiceToJob,
+  editInvoiceAssignment,
+  ingestUploadedInvoice,
+} from "@/lib/ingest";
+import { dollarsToCents } from "@/lib/money";
 import { requireSession } from "@/lib/session";
 
 export async function uploadInvoiceAction(formData: FormData) {
@@ -26,6 +31,27 @@ export async function uploadInvoiceAction(formData: FormData) {
       ? `/invoices/${result.id}?duplicate=1`
       : `/invoices/${result.id}`,
   );
+}
+
+export async function editInvoiceAssignmentAction(
+  invoiceId: string,
+  previousJobId: string,
+  formData: FormData,
+) {
+  const session = await requireSession();
+  const result = await editInvoiceAssignment({
+    businessId: session.user.businessId,
+    invoiceId,
+    jobId: String(formData.get("jobId") ?? ""),
+    categoryId: String(formData.get("categoryId") ?? ""),
+    amountCents: dollarsToCents(String(formData.get("amount") ?? "")),
+  });
+  if (!result) throw new Error("Could not update this invoice assignment");
+  revalidatePath(`/jobs/${previousJobId}`);
+  revalidatePath(`/jobs/${result.jobId}`);
+  revalidatePath(`/invoices/${invoiceId}`);
+  revalidatePath("/dashboard");
+  redirect(`/jobs/${result.jobId}`);
 }
 
 export async function assignInvoiceAction(invoiceId: string, formData: FormData) {

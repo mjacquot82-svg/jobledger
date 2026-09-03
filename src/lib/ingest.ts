@@ -10,6 +10,7 @@ import {
 import { runOcr } from "./ocr";
 import { findInvoiceByHash } from "./queries";
 import { hashBuffer, storeInvoiceFile } from "./storage";
+import { isAssignmentTenantSafe, planInvoiceCostSync } from "./invoice-cost-sync";
 
 export type IngestEmailMeta = {
   provider: string;
@@ -35,24 +36,13 @@ async function findOrCreateSupplier(businessId: string, name: string | null) {
   return created.id;
 }
 
-async function postInvoiceCost(opts: {
+async function syncInvoiceCost(opts: {
   businessId: string;
   jobId: string;
   invoiceId: string;
   amountCents: number;
+  categoryId?: string;
 }) {
-  const [materials] = await db
-    .select()
-    .from(costCategories)
-    .where(
-      and(
-        eq(costCategories.businessId, opts.businessId),
-        eq(costCategories.name, "Materials"),
-      ),
-    )
-    .limit(1);
-  if (!materials) return;
-
   const [already] = await db
     .select()
     .from(jobCosts)
@@ -63,16 +53,46 @@ async function postInvoiceCost(opts: {
       ),
     )
     .limit(1);
-  if (already) return;
-
-  await db.insert(jobCosts).values({
-    businessId: opts.businessId,
-    jobId: opts.jobId,
-    categoryId: materials.id,
-    invoiceId: opts.invoiceId,
-    amountCents: opts.amountCents,
-    sourceType: "invoice",
-  });
+  let defaultCategoryId: string | undefined;
+  if (!already && !opts.categoryId) {
+    const [materials] = await db
+      .select()
+      .from(costCategories)
+      .where(
+        and(
+          eq(costCategories.businessId, opts.businessId),
+          eq(costCategories.name, "Materials"),
+        ),
+      )
+      .limit(1);
+    defaultCategoryId = materials?.id;
+  }
+  const plan = planInvoiceCostSync(already ?? null, opts, defaultCategoryId);
+  if (!plan) return null;
+  if (plan.kind === "update") {
+    await db
+      .update(jobCosts)
+      .set(plan.values)
+      .where(
+        and(
+          eq(jobCosts.id, already.id),
+          eq(jobCosts.businessId, opts.businessId),
+        ),
+      );
+    return plan.id;
+  }
+  const [created] = await db
+    .insert(jobCosts)
+    .values(plan.values)
+    .onConflictDoUpdate({
+      target: [jobCosts.businessId, jobCosts.invoiceId],
+      set: {
+        jobId: plan.values.jobId,
+        amountCents: plan.values.amountCents,
+      },
+    })
+    .returning({ id: jobCosts.id });
+  return created.id;
 }
 
 function haystack(opts: {
@@ -182,6 +202,7 @@ export async function ingestInvoiceAttachment(opts: {
     emailSubject: opts.email?.subject ?? null,
     emailFrom: opts.email?.from ?? null,
     invoiceNumber: fields.invoiceNumber,
+    invoiceDate: fields.invoiceDate,
     totalCents: fields.totalCents,
     originalFilename: opts.filename,
     storedPath,
@@ -192,7 +213,7 @@ export async function ingestInvoiceAttachment(opts: {
   });
 
   if (status === "matched" && jobId && fields.totalCents) {
-    await postInvoiceCost({
+    await syncInvoiceCost({
       businessId: opts.businessId,
       jobId,
       invoiceId,
@@ -264,6 +285,7 @@ export async function reprocessStoredInvoice(opts: {
       jobId,
       status,
       invoiceNumber: fields.invoiceNumber,
+      invoiceDate: fields.invoiceDate,
       totalCents: fields.totalCents,
       extractedText,
       matchReason: match.reason,
@@ -277,7 +299,7 @@ export async function reprocessStoredInvoice(opts: {
     );
 
   if (jobId && fields.totalCents) {
-    await postInvoiceCost({
+    await syncInvoiceCost({
       businessId: opts.businessId,
       jobId,
       invoiceId: invoice.id,
@@ -326,7 +348,7 @@ export async function assignInvoiceToJob(opts: {
     );
 
   if (invoice.totalCents) {
-    await postInvoiceCost({
+    await syncInvoiceCost({
       businessId: opts.businessId,
       jobId: job.id,
       invoiceId: invoice.id,
@@ -335,4 +357,73 @@ export async function assignInvoiceToJob(opts: {
   }
 
   return invoice.id;
+}
+
+export async function editInvoiceAssignment(opts: {
+  businessId: string;
+  invoiceId: string;
+  jobId: string;
+  categoryId: string;
+  amountCents: number;
+}) {
+  if (!Number.isInteger(opts.amountCents) || opts.amountCents < 0) return null;
+  const [[invoice], [job], [category]] = await Promise.all([
+    db
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.id, opts.invoiceId),
+          eq(invoices.businessId, opts.businessId),
+        ),
+      )
+      .limit(1),
+    db
+      .select()
+      .from(jobs)
+      .where(
+        and(eq(jobs.id, opts.jobId), eq(jobs.businessId, opts.businessId)),
+      )
+      .limit(1),
+    db
+      .select()
+      .from(costCategories)
+      .where(
+        and(
+          eq(costCategories.id, opts.categoryId),
+          eq(costCategories.businessId, opts.businessId),
+        ),
+      )
+      .limit(1),
+  ]);
+  if (
+    !invoice ||
+    !job ||
+    !category ||
+    !isAssignmentTenantSafe(opts.businessId, [invoice, job, category])
+  ) {
+    return null;
+  }
+
+  await db
+    .update(invoices)
+    .set({
+      jobId: job.id,
+      status: "matched",
+      matchReason: `Assignment edited to ${job.jobTag ?? job.name}`,
+    })
+    .where(
+      and(
+        eq(invoices.id, invoice.id),
+        eq(invoices.businessId, opts.businessId),
+      ),
+    );
+  await syncInvoiceCost({
+    businessId: opts.businessId,
+    invoiceId: invoice.id,
+    jobId: job.id,
+    categoryId: category.id,
+    amountCents: opts.amountCents,
+  });
+  return { oldJobId: invoice.jobId, jobId: job.id };
 }

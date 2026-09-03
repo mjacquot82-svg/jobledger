@@ -106,6 +106,13 @@ describe("extractInvoiceFields", () => {
     expect(fields.totalCents).toBe(125040);
     expect(fields.supplierNameGuess).toBe("Home Depot");
   });
+
+  it("pulls a normalized invoice date", () => {
+    expect(
+      extractInvoiceFields("Supplier\nInvoice INV-2\nInvoice Date: 09/03/2026")
+        .invoiceDate,
+    ).toBe("2026-09-03");
+  });
 });
 
 describe("email ingest helpers", () => {

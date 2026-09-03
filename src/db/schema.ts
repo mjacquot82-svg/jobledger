@@ -1,5 +1,6 @@
 import {
   boolean,
+  date,
   integer,
   pgEnum,
   pgTable,
@@ -236,6 +237,7 @@ export const invoices = pgTable(
     emailSubject: text("email_subject"),
     emailFrom: text("email_from"),
     invoiceNumber: text("invoice_number"),
+    invoiceDate: date("invoice_date"),
     totalCents: integer("total_cents"),
     currency: text("currency").notNull().default("CAD"),
     originalFilename: text("original_filename").notNull(),
@@ -299,7 +301,12 @@ export const jobCosts = pgTable("job_costs", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
-});
+}, (table) => [
+  uniqueIndex("job_costs_business_invoice_idx").on(
+    table.businessId,
+    table.invoiceId,
+  ),
+]);
 
 export const customerInvoices = pgTable(
   "customer_invoices",

@@ -61,6 +61,30 @@ export function extractInvoiceFields(text: string) {
     ? Math.round(Number(totalRaw.replace(/,/g, "")) * 100)
     : null;
 
+  const dateRaw = text.match(
+    /(?:invoice\s+)?date\s*:?\s*(\d{4}-\d{2}-\d{2}|\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i,
+  )?.[1];
+  let invoiceDate: string | null = null;
+  if (dateRaw) {
+    const iso = dateRaw.match(/^\d{4}-\d{2}-\d{2}$/);
+    if (iso) {
+      invoiceDate = dateRaw;
+    } else {
+      const [month, day, rawYear] = dateRaw.split(/[\/-]/).map(Number);
+      const year = rawYear < 100 ? 2000 + rawYear : rawYear;
+      const candidate = new Date(Date.UTC(year, month - 1, day));
+      if (
+        candidate.getUTCFullYear() === year &&
+        candidate.getUTCMonth() === month - 1 &&
+        candidate.getUTCDate() === day
+      ) {
+        invoiceDate = `${year.toString().padStart(4, "0")}-${month
+          .toString()
+          .padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+      }
+    }
+  }
+
   const firstLine = text
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -68,6 +92,7 @@ export function extractInvoiceFields(text: string) {
 
   return {
     invoiceNumber,
+    invoiceDate,
     totalCents: totalCents !== null && Number.isFinite(totalCents) ? totalCents : null,
     supplierNameGuess: firstLine ?? null,
   };

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getInvoiceFile } from "@/lib/queries";
@@ -21,10 +22,20 @@ export async function GET(
   try {
     const file = await readFile(invoice.storedPath);
     const filename = invoice.originalFilename.replace(/["\r\n]/g, "_");
+    const mimeType =
+      {
+        ".pdf": "application/pdf",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+      }[path.extname(filename).toLowerCase()] ?? "application/octet-stream";
+    const disposition = request.nextUrl.searchParams.get("download") === "1"
+      ? "attachment"
+      : "inline";
     return new NextResponse(file, {
       headers: {
-        "content-type": "application/pdf",
-        "content-disposition": `inline; filename="${filename}"`,
+        "content-type": mimeType,
+        "content-disposition": `${disposition}; filename="${filename}"`,
         "cache-control": "private, no-store",
       },
     });

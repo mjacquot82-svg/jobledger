@@ -10,6 +10,7 @@ import {
   suppliers,
 } from "@/db/schema";
 import { requireBusinessId } from "./tenant";
+import { invoiceBelongsToJob } from "./invoice-cost-sync";
 
 export { requireBusinessId };
 
@@ -205,17 +206,50 @@ export async function getInvoiceFile(businessId: string, invoiceId: string) {
 
 export async function listJobInvoices(businessId: string, jobId: string) {
   const id = requireBusinessId(businessId);
-  return db
+  const rows = await db
     .select({
       id: invoices.id,
+      businessId: invoices.businessId,
+      jobId: invoices.jobId,
       status: invoices.status,
       originalFilename: invoices.originalFilename,
       invoiceNumber: invoices.invoiceNumber,
+      invoiceDate: invoices.invoiceDate,
       totalCents: invoices.totalCents,
+      supplierName: suppliers.name,
+      postedAmountCents: jobCosts.amountCents,
+      costCategoryId: jobCosts.categoryId,
+      costCategoryName: costCategories.name,
+      createdAt: invoices.createdAt,
     })
     .from(invoices)
-    .where(and(eq(invoices.businessId, id), eq(invoices.jobId, jobId)))
+    .leftJoin(
+      suppliers,
+      and(eq(suppliers.id, invoices.supplierId), eq(suppliers.businessId, id)),
+    )
+    .leftJoin(
+      jobCosts,
+      and(
+        eq(jobCosts.invoiceId, invoices.id),
+        eq(jobCosts.businessId, id),
+        eq(jobCosts.jobId, jobId),
+      ),
+    )
+    .leftJoin(
+      costCategories,
+      and(
+        eq(costCategories.id, jobCosts.categoryId),
+        eq(costCategories.businessId, id),
+      ),
+    )
+    .where(
+      and(
+        eq(invoices.businessId, id),
+        eq(invoices.jobId, jobId),
+      ),
+    )
     .orderBy(desc(invoices.createdAt));
+  return rows.filter((invoice) => invoiceBelongsToJob(invoice, id, jobId));
 }
 
 export async function findInvoiceByHash(businessId: string, contentHash: string) {
