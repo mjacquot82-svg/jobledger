@@ -3,6 +3,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { customerInvoices, jobCosts, jobs } from "@/db/schema";
 import { formatCad } from "@/lib/money";
+import { jobMarginDisplay } from "@/lib/job-margin-display";
 import { requireBusinessId } from "@/lib/queries";
 import { requireSession } from "@/lib/session";
 
@@ -71,7 +72,8 @@ export default async function ReportsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Reports</h1>
         <p className="mt-1 text-sm text-stone-600">
-          Costs vs issued or paid customer bills.
+          Job costs vs issued or paid customer bills. Margin is billed minus
+          costs (not cash profit).
         </p>
       </div>
       <section className="grid grid-cols-2 gap-3">
@@ -80,27 +82,41 @@ export default async function ReportsPage() {
           <p className="mt-2 text-2xl font-semibold">{formatCad(costTotal)}</p>
         </div>
         <div className="rounded-xl border border-stone-200 bg-white p-4">
-          <p className="text-sm text-stone-500">Billed</p>
+          <p className="text-sm text-stone-500">Billed (issued/paid)</p>
           <p className="mt-2 text-2xl font-semibold">{formatCad(billedTotal)}</p>
         </div>
       </section>
       <ul className="divide-y divide-stone-200 rounded-xl border border-stone-200 bg-white">
-        {rows.map((row) => (
-          <li key={row.id}>
-            <Link className="block px-4 py-3" href={`/jobs/${row.id}`}>
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-medium">{row.name}</p>
-                <p className="tabular-nums text-sm">
-                  {formatCad(row.marginCents)}
+        {rows.map((row) => {
+          const margin = jobMarginDisplay({
+            billedCents: row.billedCents,
+            costCents: row.costCents,
+            marginCents: row.marginCents,
+          });
+          return (
+            <li key={row.id}>
+              <Link className="block px-4 py-3" href={`/jobs/${row.id}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-medium">{row.name}</p>
+                  <p
+                    className={
+                      margin.kind === "not_billed"
+                        ? "text-sm text-amber-700"
+                        : "tabular-nums text-sm"
+                    }
+                  >
+                    {margin.text}
+                  </p>
+                </div>
+                <p className="text-sm text-stone-500">
+                  {row.jobTag} · costs {formatCad(row.costCents)} · billed{" "}
+                  {formatCad(row.billedCents)}
+                  {margin.kind === "margin" ? " · margin" : ""}
                 </p>
-              </div>
-              <p className="text-sm text-stone-500">
-                {row.jobTag} · costs {formatCad(row.costCents)} · billed{" "}
-                {formatCad(row.billedCents)}
-              </p>
-            </Link>
-          </li>
-        ))}
+              </Link>
+            </li>
+          );
+        })}
       </ul>
     </main>
   );

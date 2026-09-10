@@ -1,4 +1,4 @@
-import type { MatchResult } from "./match";
+import type { InvoiceMatchResult, MatchResult } from "./match";
 import { invoiceStatusEnum } from "../db/schema";
 
 /** Canonical invoice status values from `invoiceStatusEnum` in schema. */
@@ -32,7 +32,7 @@ export function buildReprocessInvoiceUpdate(opts: {
   approved: boolean;
   invoice: ReprocessInvoiceSnapshot;
   fields: ReprocessExtractFields;
-  match: MatchResult;
+  match: MatchResult | InvoiceMatchResult;
   supplierId: string | null;
   extractedText: string;
 }): {

@@ -4,7 +4,12 @@ import {
   inboundAddressFor,
   isInvoiceAttachment,
 } from "./email-ingest";
-import { extractInvoiceFields, matchInvoiceJobs, matchJobs } from "./match";
+import {
+  extractInvoiceFields,
+  isNumericOnlyJobTag,
+  matchInvoiceJobs,
+  matchJobs,
+} from "./match";
 
 const jobs = [
   { id: "1", jobTag: "SMITH-001" },
@@ -121,8 +126,16 @@ describe("extractInvoiceFields", () => {
   });
 });
 
-describe("matchInvoiceJobs priority", () => {
-  it("finds a job code in a product line inside PDF text", () => {
+describe("isNumericOnlyJobTag", () => {
+  it("detects purely numeric tags", () => {
+    expect(isNumericOnlyJobTag("104")).toBe(true);
+    expect(isNumericOnlyJobTag("SMITH-001")).toBe(false);
+    expect(isNumericOnlyJobTag("12A")).toBe(false);
+  });
+});
+
+describe("matchInvoiceJobs auto-match policy", () => {
+  it("auto-matches a single non-numeric tag from PDF content", () => {
     const result = matchInvoiceJobs(
       {
         pdfText: "1  Cedar boards for SMITH-001  $120.00",
@@ -130,7 +143,11 @@ describe("matchInvoiceJobs priority", () => {
       },
       jobs,
     );
-    expect(result).toMatchObject({ status: "matched", jobId: "1", source: "PDF content" });
+    expect(result).toMatchObject({
+      status: "matched",
+      jobId: "1",
+      source: "PDF content",
+    });
   });
 
   it("finds a job code in a PDF PO/reference field", () => {
@@ -138,7 +155,68 @@ describe("matchInvoiceJobs priority", () => {
       { pdfText: "PO / Reference: CHEN-003", filename: "SMITH-001.pdf" },
       jobs,
     );
-    expect(result).toMatchObject({ status: "matched", jobId: "3", source: "PDF content" });
+    expect(result).toMatchObject({
+      status: "matched",
+      jobId: "3",
+      source: "PDF content",
+    });
+  });
+
+  it("downgrades a single PDF numeric-only tag to needs_review", () => {
+    const result = matchInvoiceJobs(
+      { pdfText: "Please charge job 104\nTotal $50.00" },
+      withNumber,
+    );
+    expect(result).toMatchObject({
+      status: "needs_review",
+      jobIds: ["4"],
+      tags: ["104"],
+      source: "PDF content",
+    });
+  });
+
+  it("downgrades a single email-body hit to needs_review", () => {
+    const result = matchInvoiceJobs(
+      { pdfText: "No code", emailBody: "WILSON-002 materials" },
+      jobs,
+    );
+    expect(result).toMatchObject({
+      status: "needs_review",
+      jobIds: ["2"],
+      tags: ["WILSON-002"],
+      source: "email body",
+    });
+    expect(result.status === "needs_review" && "jobId" in result).toBe(false);
+  });
+
+  it("downgrades a single email-subject hit to needs_review", () => {
+    const result = matchInvoiceJobs(
+      {
+        pdfText: "No code",
+        emailBody: "No code",
+        emailSubject: "Invoice CHEN-003",
+      },
+      jobs,
+    );
+    expect(result).toMatchObject({
+      status: "needs_review",
+      jobIds: ["3"],
+      tags: ["CHEN-003"],
+      source: "email subject",
+    });
+  });
+
+  it("downgrades a single filename hit to needs_review", () => {
+    const result = matchInvoiceJobs(
+      { pdfText: null, filename: "SMITH-001-home-depot.pdf" },
+      jobs,
+    );
+    expect(result).toMatchObject({
+      status: "needs_review",
+      jobIds: ["1"],
+      tags: ["SMITH-001"],
+      source: "filename",
+    });
   });
 
   it("returns every valid PDF job code for review without using fallbacks", () => {
@@ -156,19 +234,68 @@ describe("matchInvoiceJobs priority", () => {
     });
   });
 
-  it("uses body, subject, and filename only as ordered fallbacks", () => {
+  it("uses body, subject, and filename only as ordered fallbacks (still review)", () => {
     expect(
       matchInvoiceJobs(
         { pdfText: "No code", emailBody: "WILSON-002", emailSubject: "CHEN-003" },
         jobs,
       ),
-    ).toMatchObject({ jobId: "2", source: "email body" });
+    ).toMatchObject({
+      status: "needs_review",
+      jobIds: ["2"],
+      tags: ["WILSON-002"],
+      source: "email body",
+    });
     expect(
       matchInvoiceJobs(
         { pdfText: "No code", emailBody: "No code", emailSubject: "CHEN-003" },
         jobs,
       ),
-    ).toMatchObject({ jobId: "3", source: "email subject" });
+    ).toMatchObject({
+      status: "needs_review",
+      jobIds: ["3"],
+      tags: ["CHEN-003"],
+      source: "email subject",
+    });
+    expect(
+      matchInvoiceJobs(
+        {
+          pdfText: "No code",
+          emailBody: "No code",
+          emailSubject: "No code",
+          filename: "CHEN-003.pdf",
+        },
+        jobs,
+      ),
+    ).toMatchObject({
+      status: "needs_review",
+      jobIds: ["3"],
+      source: "filename",
+    });
+  });
+
+  it("stays unmatched when no tier has a tag", () => {
+    expect(
+      matchInvoiceJobs(
+        { pdfText: "Invoice only", emailBody: "thanks", filename: "scan.pdf" },
+        jobs,
+      ),
+    ).toMatchObject({ status: "unmatched", source: null });
+  });
+
+  it("prefers PDF multi-hit review over a single email fallback", () => {
+    const result = matchInvoiceJobs(
+      {
+        pdfText: "SMITH-001 and WILSON-002",
+        emailBody: "CHEN-003",
+      },
+      jobs,
+    );
+    expect(result).toMatchObject({
+      status: "needs_review",
+      tags: ["SMITH-001", "WILSON-002"],
+      source: "PDF content",
+    });
   });
 });
 
