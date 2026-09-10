@@ -3,6 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
+import { getLoginDemoHints } from "@/lib/demo-login-hints";
+
+const demoHints = getLoginDemoHints({
+  nodeEnv: process.env.NODE_ENV,
+  allowDemoLoginHint:
+    process.env.NEXT_PUBLIC_ALLOW_DEMO_LOGIN_HINT ??
+    process.env.ALLOW_DEMO_LOGIN_HINT,
+});
 
 export default function LoginPage() {
   const router = useRouter();
@@ -44,7 +52,7 @@ export default function LoginPage() {
             name="email"
             type="email"
             autoComplete="username"
-            defaultValue="demo@jobledger.local"
+            defaultValue={demoHints.email}
             required
           />
         </label>
@@ -55,7 +63,7 @@ export default function LoginPage() {
             name="password"
             type="password"
             autoComplete="current-password"
-            defaultValue="DemoPass123!"
+            defaultValue={demoHints.password}
             required
           />
         </label>
@@ -68,9 +76,9 @@ export default function LoginPage() {
           {pending ? "Signing in…" : "Sign in"}
         </button>
       </form>
-      <p className="mt-6 text-sm text-stone-500">
-        Demo login is prefilled: demo@jobledger.local / DemoPass123!
-      </p>
+      {demoHints.showHint && demoHints.hintText ? (
+        <p className="mt-6 text-sm text-stone-500">{demoHints.hintText}</p>
+      ) : null}
     </main>
   );
 }

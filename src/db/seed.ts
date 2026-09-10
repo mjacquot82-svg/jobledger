@@ -11,6 +11,7 @@ import {
   user,
 } from "./schema";
 import { inboundAddressFor } from "@/lib/email-ingest";
+import { demoSeedLogMessage } from "./seed-log";
 
 const DEMO_EMAIL = "demo@jobledger.local";
 const DEMO_PASSWORD = "DemoPass123!";
@@ -181,8 +182,7 @@ async function main() {
       .where(eq(businesses.id, businessId));
   }
   await ensureDemoCatalog(businessId);
-  console.log("Demo user created with Better Auth sign-up.");
-  console.log(`Sign in: ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
+  console.log(demoSeedLogMessage());
   process.exit(0);
 }
 
