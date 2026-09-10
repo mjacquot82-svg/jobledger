@@ -1,10 +1,16 @@
-import { describe, expect, it } from "vitest";
-import { buildReprocessInvoiceUpdate } from "./reprocess-invoice-update";
+import { describe, expect, it, expectTypeOf } from "vitest";
+import { invoiceStatusEnum } from "../db/schema";
+import {
+  buildReprocessInvoiceUpdate,
+  type InvoiceStatus,
+} from "./reprocess-invoice-update";
+
+const invoiceStatusValues = invoiceStatusEnum.enumValues;
 
 const invoice = {
   totalCents: 10000,
   jobId: "job-approved",
-  status: "matched",
+  status: "matched" as InvoiceStatus,
   matchReason: "Manual allocation approved for one job",
   supplierId: "supplier-stored",
   invoiceNumber: "INV-STORED",
@@ -49,6 +55,7 @@ describe("buildReprocessInvoiceUpdate", () => {
     expect(update.detectedJobTags).toEqual(invoice.detectedJobTags);
     expect(update.supplierNameGuess).toBe(invoice.supplierNameGuess);
     expect(update.extractedText).toBe("fresh ocr text");
+    expect(invoiceStatusValues).toContain(update.status);
   });
 
   it("still refreshes money and assignment fields when not approved", () => {
@@ -69,6 +76,7 @@ describe("buildReprocessInvoiceUpdate", () => {
     expect(update.invoiceNumber).toBe(fields.invoiceNumber);
     expect(update.detectedJobTags).toEqual([matched.jobTag]);
     expect(update.supplierNameGuess).toBe(fields.supplierNameGuess);
+    expect(invoiceStatusValues).toContain(update.status);
   });
 
   it("maps needs_review when unapproved and match is ambiguous", () => {
@@ -90,5 +98,31 @@ describe("buildReprocessInvoiceUpdate", () => {
     expect(update.jobId).toBeNull();
     expect(update.detectedJobTags).toEqual(["SMITH-001", "WILSON-002"]);
     expect(update.totalCents).toBe(fields.totalCents);
+    expect(invoiceStatusValues).toContain(update.status);
+  });
+
+  it("types helper status as a member of the schema invoice status union", () => {
+    const approved = buildReprocessInvoiceUpdate({
+      approved: true,
+      invoice,
+      fields,
+      match: matched,
+      supplierId: null,
+      extractedText: "t",
+    });
+    const unapproved = buildReprocessInvoiceUpdate({
+      approved: false,
+      invoice,
+      fields,
+      match: matched,
+      supplierId: null,
+      extractedText: "t",
+    });
+
+    expectTypeOf(approved.status).toEqualTypeOf<InvoiceStatus>();
+    expectTypeOf(unapproved.status).toEqualTypeOf<InvoiceStatus>();
+    expectTypeOf<InvoiceStatus>().toEqualTypeOf<
+      (typeof invoiceStatusEnum.enumValues)[number]
+    >();
   });
 });
