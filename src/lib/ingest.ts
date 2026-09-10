@@ -16,6 +16,7 @@ import {
   type InvoiceAllocationInput,
   validateInvoiceAllocations,
 } from "./invoice-allocations";
+import { buildReprocessInvoiceUpdate } from "./reprocess-invoice-update";
 
 export type IngestEmailMeta = {
   provider: string;
@@ -294,39 +295,28 @@ export async function reprocessStoredInvoice(opts: {
     fields.supplierNameGuess,
   );
 
-  const detectedJobTags =
-    match.status === "matched"
-      ? [match.jobTag]
-      : match.status === "needs_review"
-        ? match.tags
-        : [];
   const approved = Boolean(invoice.allocationsApprovedAt);
-  const status = approved
-    ? invoice.status
-    : match.status === "matched"
-      ? "matched"
-      : "needs_review";
-  const jobId = approved
-    ? invoice.jobId
-    : match.status === "matched"
-      ? match.jobId
-      : null;
+  const update = buildReprocessInvoiceUpdate({
+    approved,
+    invoice: {
+      totalCents: invoice.totalCents,
+      jobId: invoice.jobId,
+      status: invoice.status,
+      matchReason: invoice.matchReason,
+      supplierId: invoice.supplierId,
+      invoiceNumber: invoice.invoiceNumber,
+      invoiceDate: invoice.invoiceDate,
+      detectedJobTags: invoice.detectedJobTags,
+      supplierNameGuess: invoice.supplierNameGuess,
+    },
+    fields,
+    match,
+    supplierId,
+    extractedText,
+  });
   await db
     .update(invoices)
-    .set({
-      supplierId,
-      jobId,
-      status,
-      invoiceNumber: fields.invoiceNumber,
-      invoiceDate: fields.invoiceDate,
-      detectedJobTags,
-      totalCents: fields.totalCents,
-      extractedText,
-      matchReason: approved
-        ? invoice.matchReason
-        : match.reason,
-      supplierNameGuess: fields.supplierNameGuess,
-    })
+    .set(update)
     .where(
       and(
         eq(invoices.id, invoice.id),
@@ -334,6 +324,8 @@ export async function reprocessStoredInvoice(opts: {
       ),
     );
 
+  const jobId = update.jobId;
+  const status = update.status;
   if (!approved && jobId && fields.totalCents) {
     await syncInvoiceCost({
       businessId: opts.businessId,
@@ -351,7 +343,12 @@ export async function reprocessStoredInvoice(opts: {
         ),
       );
   }
-  return { ok: true as const, totalCents: fields.totalCents, status, jobId };
+  return {
+    ok: true as const,
+    totalCents: update.totalCents,
+    status,
+    jobId,
+  };
 }
 
 export async function assignInvoiceToJob(opts: {

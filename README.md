@@ -20,11 +20,13 @@ npm run db:seed
 npm run dev
 ```
 
+Local setup uses explicit migrate/seed scripts (`db:push`, `db:seed`). Pilot/production boot (`npm start`) only runs `next start` — it does **not** push schema or seed. Run `db:push` / `db:seed` yourself when you need them (and never rely on start for that on Railway).
+
 If you already seeded earlier, run `npm install` and `npm run db:push` again so new tables exist. Seed will not overwrite existing demo data.
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Demo login:
+Demo login (local / non-production only; the login form prefills these outside production, or when `ALLOW_DEMO_LOGIN_HINT=true` / `NEXT_PUBLIC_ALLOW_DEMO_LOGIN_HINT=true`):
 
 - Email: `demo@jobledger.local`
 - Password: `DemoPass123!`
