@@ -1,9 +1,58 @@
 export type JobTag = { id: string; jobTag: string | null };
 
+/**
+ * MATCHING RULES (pilot hardening)
+ *
+ * Before:
+ * - Auto-match (`matched`) on exactly one tag hit from any tier
+ *   (PDF content → email body → email subject → filename).
+ * - Numeric-only tags (e.g. "104") could auto-match from any source.
+ * - Multi-hit → needs_review; zero hits → unmatched.
+ *
+ * After (implemented by matchInvoiceJobs):
+ * - Auto-match (`status: matched`) ONLY when:
+ *   exactly one job tag hit AND source is PDF content AND tag is NOT
+ *   purely numeric (`/^\d+$/`).
+ * - Single hit from email body / subject / filename → needs_review
+ *   (keep tags/jobIds/reason/source).
+ * - Single hit from PDF with numeric-only tag → needs_review.
+ * - Multi-hit still needs_review; zero hits still unmatched.
+ * - Precedence tiers unchanged: PDF → body → subject → filename.
+ *
+ * Low-level matchJobs still reports raw single/multi/zero hits without
+ * applying the auto-match policy (policy lives in matchInvoiceJobs).
+ */
 export type MatchResult =
   | { status: "matched"; jobId: string; jobTag: string; reason: string }
   | { status: "needs_review"; jobIds: string[]; tags: string[]; reason: string }
   | { status: "unmatched"; reason: string };
+
+export type MatchSource =
+  | "PDF content"
+  | "email body"
+  | "email subject"
+  | "filename";
+
+export type InvoiceMatchResult =
+  | {
+      status: "matched";
+      jobId: string;
+      jobTag: string;
+      reason: string;
+      source: "PDF content";
+    }
+  | {
+      status: "needs_review";
+      jobIds: string[];
+      tags: string[];
+      reason: string;
+      source: MatchSource;
+    }
+  | { status: "unmatched"; reason: string; source: null };
+
+export function isNumericOnlyJobTag(tag: string) {
+  return /^\d+$/.test(tag.trim());
+}
 
 function tagPattern(tag: string) {
   const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -58,8 +107,8 @@ export function matchInvoiceJobs(
     filename?: string | null;
   },
   jobs: JobTag[],
-) {
-  const tiers = [
+): InvoiceMatchResult {
+  const tiers: { source: MatchSource; text: string | null | undefined }[] = [
     { source: "PDF content", text: sources.pdfText },
     { source: "email body", text: sources.emailBody },
     { source: "email subject", text: sources.emailSubject },
@@ -68,16 +117,43 @@ export function matchInvoiceJobs(
   for (const tier of tiers) {
     if (!tier.text) continue;
     const result = matchJobs(tier.text, jobs);
-    if (result.status !== "unmatched") {
+    if (result.status === "unmatched") continue;
+
+    const reason = `${result.reason} in ${tier.source}`;
+
+    if (result.status === "needs_review") {
       return {
-        ...result,
+        status: "needs_review",
+        jobIds: result.jobIds,
+        tags: result.tags,
+        reason,
         source: tier.source,
-        reason: `${result.reason} in ${tier.source}`,
       };
     }
+
+    // Single hit: auto-match only from non-numeric PDF content.
+    const fromPdf = tier.source === "PDF content";
+    const numericOnly = isNumericOnlyJobTag(result.jobTag);
+    if (fromPdf && !numericOnly) {
+      return {
+        status: "matched",
+        jobId: result.jobId,
+        jobTag: result.jobTag,
+        reason,
+        source: "PDF content",
+      };
+    }
+
+    return {
+      status: "needs_review",
+      jobIds: [result.jobId],
+      tags: [result.jobTag],
+      reason,
+      source: tier.source,
+    };
   }
   return {
-    status: "unmatched" as const,
+    status: "unmatched",
     source: null,
     reason: "No job tag found in PDF content, email, or filename",
   };

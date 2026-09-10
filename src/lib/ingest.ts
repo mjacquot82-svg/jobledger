@@ -150,11 +150,21 @@ export async function ingestInvoiceAttachment(opts: {
   // Forwarded email prose may contain unrelated phrases such as "invoice test".
   const fields = extractInvoiceFields(extractedText || searchText);
 
+  // Resolve supplier before number dedupe so the lookup can be supplier-scoped
+  // (aligns with partial unique index on businessId + supplierId + invoiceNumber).
+  const supplierId = await findOrCreateSupplier(
+    opts.businessId,
+    fields.supplierNameGuess,
+  );
+
   if (fields.invoiceNumber) {
     const numberDup = await findInvoiceByNumber(
       opts.businessId,
       fields.invoiceNumber,
-      fields.supplierNameGuess,
+      {
+        supplierId,
+        supplierNameGuess: fields.supplierNameGuess,
+      },
     );
     if (numberDup) {
       return { id: numberDup.id, duplicate: true as const };
@@ -181,10 +191,6 @@ export async function ingestInvoiceAttachment(opts: {
       filename: opts.filename,
     },
     jobRows,
-  );
-  const supplierId = await findOrCreateSupplier(
-    opts.businessId,
-    fields.supplierNameGuess,
   );
 
   let status: typeof invoices.$inferInsert.status = "unmatched";
@@ -233,7 +239,13 @@ export async function ingestInvoiceAttachment(opts: {
     supplierNameGuess: fields.supplierNameGuess,
   });
 
-  if (status === "matched" && jobId && fields.totalCents) {
+  // Auto cost sync only for PDF-content auto-matches (match.source gated).
+  if (
+    status === "matched" &&
+    match.source === "PDF content" &&
+    jobId &&
+    fields.totalCents
+  ) {
     await syncInvoiceCost({
       businessId: opts.businessId,
       jobId,
@@ -326,7 +338,13 @@ export async function reprocessStoredInvoice(opts: {
 
   const jobId = update.jobId;
   const status = update.status;
-  if (!approved && jobId && fields.totalCents) {
+  if (
+    !approved &&
+    status === "matched" &&
+    match.source === "PDF content" &&
+    jobId &&
+    fields.totalCents
+  ) {
     await syncInvoiceCost({
       businessId: opts.businessId,
       jobId,

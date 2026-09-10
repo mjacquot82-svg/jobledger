@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -269,6 +270,13 @@ export const invoices = pgTable(
       table.provider,
       table.providerMessageId,
     ),
+    // Partial unique: same invoice # may repeat only when supplier is unknown.
+    // Do not push until live duplicate check returns 0 rows (see scripts/).
+    uniqueIndex("invoices_business_supplier_number_idx")
+      .on(table.businessId, table.supplierId, table.invoiceNumber)
+      .where(
+        sql`invoice_number IS NOT NULL AND supplier_id IS NOT NULL`,
+      ),
   ],
 );
 
